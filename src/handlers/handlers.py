@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile, Document, PhotoSize, Video, Audio, Voice
+from aiogram.types import Message, CallbackQuery, FSInputFile, Document, PhotoSize, Video, Audio, Voice, BufferedInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -10,10 +10,12 @@ from pathlib import Path
 import aiofiles
 import os
 from datetime import datetime
+import io
+import csv
 
-from config import Config
-from database import Database
-from utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
+from src.config.config import Config
+from src.database.database import Database
+from src.utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -36,11 +38,13 @@ async def cmd_start(message: Message):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
+• /export - Экспорт файлов
 • /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
+📊 **Экспорт:** Создайте CSV со списком файлов
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -66,12 +70,18 @@ async def cmd_help(message: Message):
 • /files - Показать все ваши файлы
 • /search <запрос> - Поиск файлов
 • /delete - Информация об удалении файлов
+• /export - Экспорт файлов в CSV
 • /stats - Статистика использования
 
 **Удаление файлов:**
 • Используйте кнопку "🗑️ Удалить" рядом с файлом
 • Подтверждение удаления для безопасности
 • Удаленные файлы нельзя восстановить
+
+**Экспорт файлов:**
+• /export - Создать CSV файл со списком файлов
+• Включает название, размер, тип, дату загрузки
+• Описания и теги файлов
 
 **Ограничения:**
 • Максимальный размер файла: {max_size}MB
@@ -130,6 +140,27 @@ async def cmd_search(message: Message):
 async def cmd_delete(message: Message):
     """Удаление файлов"""
     await message.answer("🗑️ **Удаление файлов**\n\nИспользуйте кнопку '🗑️ Удалить' рядом с файлом в списке ваших файлов.\n\nКоманда: /files")
+
+@router.message(Command("export"))
+async def cmd_export(message: Message):
+    """Экспорт файлов"""
+    user_id = message.from_user.id
+    files = await db.get_user_files(user_id)
+    
+    if not files:
+        await message.answer("📁 У вас нет файлов для экспорта.\n\nЗагрузите файлы, чтобы создать экспорт!")
+        return
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📊 Создать экспорт", callback_data="export_files")
+    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)
+    
+    await message.answer(
+        f"📊 **Экспорт файлов**\n\n📁 Всего файлов: {len(files)}\n\nСоздастся CSV файл со списком всех ваших файлов.",
+        reply_markup=keyboard.as_markup()
+    )
 
 @router.message(F.document)
 async def handle_document(message: Message, state: FSMContext):
@@ -428,11 +459,13 @@ async def callback_main_menu(callback: CallbackQuery):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
+• /export - Экспорт файлов
 • /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
+📊 **Экспорт:** Создайте CSV со списком файлов
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -671,6 +704,93 @@ async def callback_cancel_delete(callback: CallbackQuery):
     await callback.message.answer("❌ Удаление отменено.", reply_markup=keyboard.as_markup())
     await callback.answer()
 
+async def create_files_export(user_id: int, files: list) -> tuple[str, io.BytesIO]:
+    """Создает экспорт списка файлов в формате CSV"""
+    # Создаем CSV в памяти
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Записываем заголовки
+    writer.writerow([
+        'Название файла',
+        'Размер (MB)',
+        'Тип файла',
+        'Категория',
+        'Дата загрузки',
+        'Описание',
+        'Теги'
+    ])
+    
+    # Записываем данные файлов
+    for file_data in files:
+        record_id, file_id, file_name, file_size, file_type, category, _, upload_date, description, tags, message_id, chat_id = file_data
+        
+        file_size_mb = file_size / (1024 * 1024)
+        upload_date_str = datetime.fromisoformat(upload_date).strftime('%d.%m.%Y %H:%M')
+        
+        writer.writerow([
+            file_name,
+            f"{file_size_mb:.2f}",
+            file_type,
+            get_category_name(category),
+            upload_date_str,
+            description or '',
+            tags or ''
+        ])
+    
+    # Получаем содержимое и создаем BytesIO объект
+    csv_content = output.getvalue()
+    output.close()
+    
+    # Создаем BytesIO объект для отправки
+    csv_bytes = io.BytesIO(csv_content.encode('utf-8'))
+    csv_bytes.seek(0)
+    
+    # Формируем имя файла
+    current_date = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"files_export_{current_date}.csv"
+    
+    return filename, csv_bytes
+
+@router.callback_query(F.data == "export_files")
+async def callback_export_files(callback: CallbackQuery):
+    """Callback для экспорта файлов"""
+    user_id = callback.from_user.id
+    
+    # Получаем все файлы пользователя
+    files = await db.get_user_files(user_id)
+    
+    if not files:
+        await callback.answer("📁 У вас нет файлов для экспорта!")
+        return
+    
+    try:
+        # Создаем экспорт
+        filename, csv_bytes = await create_files_export(user_id, files)
+        
+        # Создаем временный файл
+        temp_file_path = f"/tmp/{filename}"
+        with open(temp_file_path, 'wb') as f:
+            f.write(csv_bytes.getvalue())
+        
+        # Отправляем файл
+        await callback.message.answer_document(
+            document=FSInputFile(temp_file_path),
+            caption=f"📊 **Экспорт файлов**\n\n📁 Всего файлов: {len(files)}\n📅 Дата экспорта: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        # Удаляем временный файл
+        os.remove(temp_file_path)
+        
+        await callback.answer("✅ Экспорт создан и отправлен!")
+        
+        # Логируем экспорт
+        logger.info(f"Пользователь {user_id} экспортировал {len(files)} файлов")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при создании экспорта: {e}")
+        await callback.answer("❌ Ошибка при создании экспорта!")
+
 async def show_user_files(message: Message, user_id: int):
     """Показать файлы пользователя"""
     files = await db.get_user_files(user_id)
@@ -713,6 +833,7 @@ async def show_files_list(message: Message, files: list, title: str):
         files_text += f"... и еще {len(files) - 8} файлов"
     
     # Добавляем общие кнопки
+    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
