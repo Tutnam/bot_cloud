@@ -13,9 +13,9 @@ from datetime import datetime
 import io
 import csv
 
-from config.config import Config
-from database.database import Database
-from utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
+from src.config.config import Config
+from src.database.database import Database
+from src.utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -1031,7 +1031,7 @@ async def handle_shared_file_download(message: Message, share_id: str):
 
 def get_bot_share_url(share_id: str) -> str:
     """Получить ссылку через бота с реальным именем бота"""
-    from config.config import Config
+    from src.config.config import Config
     bot_username = Config.BOT_USERNAME or "your_bot_username"
     return f"https://t.me/{bot_username}?start=file_{share_id}"
 

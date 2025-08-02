@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
@@ -24,7 +24,19 @@ async def main():
     """Главная функция запуска бота"""
     # Инициализируем бота и диспетчер
     bot = Bot(token=Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    storage = MemoryStorage()
+    
+    # Используем RedisStorage для продакшена
+    try:
+        storage = RedisStorage.from_url(
+            url=Config.REDIS_URL
+        )
+        logger.info("✅ Используется RedisStorage для хранения состояний")
+    except Exception as e:
+        logger.error(f"❌ Ошибка подключения к Redis: {e}")
+        logger.warning("⚠️ Переключаемся на MemoryStorage")
+        from aiogram.fsm.storage.memory import MemoryStorage
+        storage = MemoryStorage()
+    
     dp = Dispatcher(storage=storage)
     
     # Получаем информацию о боте
