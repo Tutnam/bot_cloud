@@ -30,11 +30,6 @@ async def main():
     # Регистрируем роутеры
     dp.include_router(router)
     
-    # Обработчик ошибок
-    @dp.error()
-    async def error_handler(event, exception):
-        logger.error(f"Ошибка при обработке {event}: {exception}")
-    
     logger.info("🤖 FileStorage Bot запускается...")
     
     try:

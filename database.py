@@ -22,6 +22,7 @@ class Database:
                     file_name TEXT NOT NULL,
                     file_size INTEGER NOT NULL,
                     file_type TEXT NOT NULL,
+                    category TEXT NOT NULL,
                     user_id INTEGER NOT NULL,
                     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     description TEXT,
@@ -33,16 +34,16 @@ class Database:
             conn.commit()
     
     async def add_file(self, file_id: str, file_name: str, file_size: int, 
-                       file_type: str, user_id: int, description: str = None, tags: str = None,
+                       file_type: str, category: str, user_id: int, description: str = None, tags: str = None,
                        message_id: int = None, chat_id: int = None):
         """Добавить файл в базу данных"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO files (file_id, file_name, file_size, file_type, user_id, description, tags, message_id, chat_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (file_id, file_name, file_size, file_type, user_id, description, tags, message_id, chat_id))
+                    INSERT INTO files (file_id, file_name, file_size, file_type, category, user_id, description, tags, message_id, chat_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (file_id, file_name, file_size, file_type, category, user_id, description, tags, message_id, chat_id))
                 conn.commit()
                 return cursor.lastrowid  # Возвращаем ID записи
         except Exception as e:
@@ -55,12 +56,40 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, file_id, file_name, file_size, file_type, user_id, upload_date, description, tags, message_id, chat_id 
+                    SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
                     FROM files WHERE user_id = ? ORDER BY upload_date DESC
                 ''', (user_id,))
                 return cursor.fetchall()
         except Exception as e:
             logger.error(f"Ошибка при получении файлов пользователя: {e}")
+            return []
+    
+    async def get_user_files_by_category(self, user_id: int, category: str):
+        """Получить файлы пользователя по категории"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
+                    FROM files WHERE user_id = ? AND category = ? ORDER BY upload_date DESC
+                ''', (user_id, category))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при получении файлов по категории: {e}")
+            return []
+    
+    async def get_user_categories(self, user_id: int):
+        """Получить категории пользователя с количеством файлов"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT category, COUNT(*) as count, SUM(file_size) as total_size
+                    FROM files WHERE user_id = ? GROUP BY category ORDER BY count DESC
+                ''', (user_id,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при получении категорий пользователя: {e}")
             return []
     
     async def get_file_by_id(self, file_id: str):
@@ -69,7 +98,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, file_id, file_name, file_size, file_type, user_id, upload_date, description, tags, message_id, chat_id 
+                    SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
                     FROM files WHERE file_id = ?
                 ''', (file_id,))
                 return cursor.fetchone()
@@ -101,7 +130,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, file_id, file_name, file_size, file_type, user_id, upload_date, description, tags, message_id, chat_id 
+                    SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
                     FROM files WHERE id = ?
                 ''', (record_id,))
                 result = cursor.fetchone()
@@ -131,7 +160,7 @@ class Database:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, file_id, file_name, file_size, file_type, user_id, upload_date, description, tags, message_id, chat_id 
+                    SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
                     FROM files 
                     WHERE user_id = ? AND (file_name LIKE ? OR description LIKE ?)
                     ORDER BY upload_date DESC

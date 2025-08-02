@@ -116,6 +116,58 @@ def sanitize_filename(filename: str) -> str:
     
     return filename
 
+def get_file_category(file_type: str) -> str:
+    """Возвращает категорию файла"""
+    file_type = file_type.lower()
+    
+    # Документы
+    if file_type in ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt']:
+        return "documents"
+    
+    # Изображения
+    elif file_type in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']:
+        return "images"
+    
+    # Видео
+    elif file_type in ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm']:
+        return "videos"
+    
+    # Аудио
+    elif file_type in ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a']:
+        return "audio"
+    
+    # Архивы
+    elif file_type in ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']:
+        return "archives"
+    
+    # Другое
+    else:
+        return "other"
+
+def get_category_icon(category: str) -> str:
+    """Возвращает эмодзи для категории"""
+    icons = {
+        'documents': '📄',
+        'images': '🖼️',
+        'videos': '🎬',
+        'audio': '🎵',
+        'archives': '📦',
+        'other': '📱'
+    }
+    return icons.get(category, '📱')
+
+def get_category_name(category: str) -> str:
+    """Возвращает название категории на русском"""
+    names = {
+        'documents': 'Документы',
+        'images': 'Изображения',
+        'videos': 'Видео',
+        'audio': 'Аудио',
+        'archives': 'Архивы',
+        'other': 'Другое'
+    }
+    return names.get(category, 'Другое')
+
 def get_file_type_icon(file_type: str) -> str:
     """Возвращает эмодзи для типа файла"""
     icons = {

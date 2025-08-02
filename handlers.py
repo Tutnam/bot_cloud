@@ -13,7 +13,7 @@ from datetime import datetime
 
 from config import Config
 from database import Database
-from utils import format_file_size, get_file_extension
+from utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -203,12 +203,16 @@ async def handle_file_upload(message: Message, state: FSMContext, file_obj):
         await message.answer(error_text, reply_markup=keyboard.as_markup())
         return
     
+    # Определяем категорию файла
+    category = get_file_category(file_ext)
+    
     # Сохраняем информацию о файле в состоянии
     await state.update_data(
         file_id=file_id,
         file_name=file_name,
         file_size=file_size,
         file_type=file_ext,
+        category=category,
         message_id=message.message_id,
         chat_id=message.chat.id
     )
@@ -258,6 +262,7 @@ async def handle_tags(message: Message, state: FSMContext):
         file_name=data['file_name'],
         file_size=data['file_size'],
         file_type=data['file_type'],
+        category=data['category'],
         user_id=message.from_user.id,
         description=data['description'],
         tags=tags,
@@ -306,14 +311,66 @@ async def handle_tags(message: Message, state: FSMContext):
 @router.callback_query(F.data == "show_files")
 async def callback_show_files(callback: CallbackQuery):
     """Callback для показа файлов"""
-    await show_user_files(callback.message, callback.from_user.id)
+    await show_categories(callback.message, callback.from_user.id)
     await callback.answer()
+
+async def show_categories(message: Message, user_id: int):
+    """Показать категории файлов пользователя"""
+    categories = await db.get_user_categories(user_id)
+    
+    if not categories:
+        await message.answer("📁 У вас пока нет сохраненных файлов.\n\nОтправьте файл, чтобы начать!")
+        return
+    
+    categories_text = "📁 **Выберите категорию файлов:**\n\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    for category, count, total_size in categories:
+        icon = get_category_icon(category)
+        name = get_category_name(category)
+        size_mb = total_size / (1024 * 1024) if total_size else 0
+        
+        categories_text += f"{icon} **{name}** - {count} файлов ({size_mb:.1f} MB)\n"
+        keyboard.button(text=f"{icon} {name} ({count})", callback_data=f"category_{category}")
+    
+    # Добавляем кнопку "Все файлы"
+    keyboard.button(text="📋 Все файлы", callback_data="all_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)
+    
+    await message.answer(categories_text, reply_markup=keyboard.as_markup())
 
 @router.callback_query(F.data == "upload_file")
 async def callback_upload_file(callback: CallbackQuery):
     """Callback для загрузки файла"""
     await callback.message.answer("📤 Отправьте файл, который хотите сохранить:")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("category_"))
+async def callback_show_category(callback: CallbackQuery):
+    """Callback для показа файлов определенной категории"""
+    category = callback.data.replace("category_", "")
+    await show_user_files_by_category(callback.message, callback.from_user.id, category)
+    await callback.answer()
+
+@router.callback_query(F.data == "all_files")
+async def callback_show_all_files(callback: CallbackQuery):
+    """Callback для показа всех файлов"""
+    await show_user_files(callback.message, callback.from_user.id)
+    await callback.answer()
+
+async def show_user_files_by_category(message: Message, user_id: int, category: str):
+    """Показать файлы пользователя по категории"""
+    files = await db.get_user_files_by_category(user_id, category)
+    
+    if not files:
+        category_name = get_category_name(category)
+        await message.answer(f"📁 В категории '{category_name}' пока нет файлов.")
+        return
+    
+    category_name = get_category_name(category)
+    await show_files_list(message, files, f"📁 {category_name}:")
 
 @router.callback_query(F.data == "search_files")
 async def callback_search_files(callback: CallbackQuery):
@@ -415,6 +472,7 @@ async def callback_skip_tags(callback: CallbackQuery, state: FSMContext):
         file_name=data['file_name'],
         file_size=data['file_size'],
         file_type=data['file_type'],
+        category=data['category'],
         user_id=callback.from_user.id,
         description=data['description'],
         tags=None,
@@ -477,7 +535,7 @@ async def callback_download_file(callback: CallbackQuery):
     logger.info(f"Найден файл: {file_data}")
     
     # Проверяем, что файл принадлежит пользователю
-    _, file_id, file_name, file_size, file_type, user_id, upload_date, description, tags, message_id, chat_id = file_data
+    _, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id = file_data
     
     if user_id != callback.from_user.id:
         await callback.answer("❌ У вас нет доступа к этому файлу!")
@@ -520,7 +578,7 @@ async def show_files_list(message: Message, files: list, title: str):
     keyboard = InlineKeyboardBuilder()
     
     for i, file_data in enumerate(files[:8], 1):  # Показываем первые 8 файлов (лимит кнопок)
-        record_id, file_id, file_name, file_size, file_type, _, upload_date, description, tags, message_id, chat_id = file_data
+        record_id, file_id, file_name, file_size, file_type, category, _, upload_date, description, tags, message_id, chat_id = file_data
         
         file_size_mb = file_size / (1024 * 1024)
         upload_date_str = datetime.fromisoformat(upload_date).strftime('%d.%m.%Y %H:%M')
