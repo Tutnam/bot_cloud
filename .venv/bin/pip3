@@ -1,4 +1,4 @@
-#!/home/boss/cursor_project/bot_cloud/.venv/bin/python3.11
+#!/home/boss/cursor_project/bot_cloud/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
