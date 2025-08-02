@@ -12,4 +12,18 @@ class Config:
     MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 52428800))
     
     # Логирование
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO') 
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+    
+    # Информация о боте (будет установлена при запуске)
+    BOT_USERNAME = None
+    
+    @classmethod
+    async def get_bot_info(cls, bot):
+        """Получить информацию о боте"""
+        try:
+            bot_info = await bot.get_me()
+            cls.BOT_USERNAME = bot_info.username
+            return bot_info
+        except Exception as e:
+            print(f"❌ Ошибка при получении информации о боте: {e}")
+            return None 

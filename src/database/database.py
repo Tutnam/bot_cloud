@@ -31,6 +31,21 @@ class Database:
                     chat_id INTEGER
                 )
             ''')
+            
+            # Создаем таблицу для ссылок на файлы
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS share_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    share_id TEXT UNIQUE NOT NULL,
+                    file_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    record_id INTEGER NOT NULL,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_date TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1,
+                    FOREIGN KEY (record_id) REFERENCES files (id) ON DELETE CASCADE
+                )
+            ''')
             conn.commit()
     
     async def add_file(self, file_id: str, file_name: str, file_size: int, 
@@ -203,4 +218,96 @@ class Database:
                 }
         except Exception as e:
             logger.error(f"Ошибка при получении статистики: {e}")
-            return {'total_files': 0, 'total_size': 0} 
+            return {'total_files': 0, 'total_size': 0}
+    
+    async def add_share_link(self, share_id: str, file_id: str, user_id: int, record_id: int):
+        """Добавить ссылку на файл"""
+        try:
+            from datetime import datetime, timedelta
+            
+            # Устанавливаем срок действия ссылки (24 часа)
+            expires_date = datetime.now() + timedelta(hours=24)
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO share_links (share_id, file_id, user_id, record_id, expires_date)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (share_id, file_id, user_id, record_id, expires_date))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении ссылки: {e}")
+            return False
+    
+    async def get_share_link(self, share_id: str):
+        """Получить информацию о ссылке"""
+        try:
+            from datetime import datetime
+            
+            logger.info(f"Ищем ссылку с share_id: {share_id}")
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sl.share_id, sl.file_id, sl.user_id, sl.record_id, sl.created_date, sl.expires_date, sl.is_active,
+                           f.file_name, f.file_size, f.file_type, f.category, f.description, f.tags
+                    FROM share_links sl
+                    JOIN files f ON sl.record_id = f.id
+                    WHERE sl.share_id = ? AND sl.is_active = 1
+                ''', (share_id,))
+                result = cursor.fetchone()
+                
+                logger.info(f"Результат поиска ссылки: {result}")
+                
+                if result:
+                    # Проверяем, не истекла ли ссылка
+                    expires_date = datetime.fromisoformat(result[5])
+                    logger.info(f"Срок действия ссылки: {expires_date}, текущее время: {datetime.now()}")
+                    
+                    if datetime.now() > expires_date:
+                        logger.warning(f"Ссылка {share_id} истекла")
+                        # Помечаем ссылку как неактивную
+                        cursor.execute('UPDATE share_links SET is_active = 0 WHERE share_id = ?', (share_id,))
+                        conn.commit()
+                        return None
+                    
+                    logger.info(f"Ссылка {share_id} найдена и активна")
+                    return result
+                else:
+                    logger.warning(f"Ссылка {share_id} не найдена")
+                return None
+        except Exception as e:
+            logger.error(f"Ошибка при получении ссылки: {e}")
+            return None
+    
+    async def deactivate_share_link(self, share_id: str):
+        """Деактивировать ссылку"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE share_links SET is_active = 0 WHERE share_id = ?
+                ''', (share_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Ошибка при деактивации ссылки: {e}")
+            return False
+    
+    async def cleanup_expired_links(self):
+        """Очистить истекшие ссылки"""
+        try:
+            from datetime import datetime
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE share_links SET is_active = 0 
+                    WHERE expires_date < ? AND is_active = 1
+                ''', (datetime.now(),))
+                conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            logger.error(f"Ошибка при очистке истекших ссылок: {e}")
+            return 0 

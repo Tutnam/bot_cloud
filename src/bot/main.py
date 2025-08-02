@@ -27,6 +27,15 @@ async def main():
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     
+    # Получаем информацию о боте
+    bot_info = await Config.get_bot_info(bot)
+    if bot_info:
+        logger.info(f"🤖 Бот @{bot_info.username} ({bot_info.first_name}) запускается...")
+        logger.info(f"📝 Имя бота установлено: @{Config.BOT_USERNAME}")
+    else:
+        logger.warning("⚠️ Не удалось получить информацию о боте")
+        logger.warning("🔧 Бот будет использовать 'your_bot_username' в ссылках")
+    
     # Регистрируем роутеры
     dp.include_router(router)
     

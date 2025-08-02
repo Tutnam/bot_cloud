@@ -13,9 +13,9 @@ from datetime import datetime
 import io
 import csv
 
-from src.config.config import Config
-from src.database.database import Database
-from src.utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
+from config.config import Config
+from database.database import Database
+from utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -28,6 +28,26 @@ class FileUploadStates(StatesGroup):
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     """Обработчик команды /start"""
+    
+    logger.info(f"Получена команда start: {message.text}")
+    logger.info(f"От пользователя: {message.from_user.id}")
+    
+    # Проверяем, есть ли параметры в команде start
+    if message.text and len(message.text.split()) > 1:
+        start_param = message.text.split()[1]
+        logger.info(f"Получен параметр start: {start_param}")
+        
+        # Если параметр начинается с "file_", это ссылка на файл
+        if start_param.startswith("file_"):
+            share_id = start_param.replace("file_", "")
+            logger.info(f"Обрабатываем ссылку на файл с share_id: {share_id}")
+            await handle_shared_file_download(message, share_id)
+            return
+        else:
+            logger.info(f"Параметр start не является ссылкой на файл: {start_param}")
+    else:
+        logger.info("Команда start без параметров")
+    
     welcome_text = """
 🤖 **Добро пожаловать в FileStorage Bot!**
 
@@ -45,6 +65,7 @@ async def cmd_start(message: Message):
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
 📊 **Экспорт:** Создайте CSV со списком файлов
+🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -55,6 +76,24 @@ async def cmd_start(message: Message):
     keyboard.adjust(2)
     
     await message.answer(welcome_text, reply_markup=keyboard.as_markup())
+
+@router.message()
+async def handle_all_messages(message: Message):
+    """Обработчик всех сообщений для отладки"""
+    logger.info(f"Получено сообщение: {message.text}")
+    logger.info(f"Тип сообщения: {type(message)}")
+    logger.info(f"От пользователя: {message.from_user.id}")
+    
+    # Если это команда start с параметрами, обрабатываем её
+    if message.text and message.text.startswith("/start "):
+        start_param = message.text.split()[1]
+        logger.info(f"Обрабатываем start с параметром: {start_param}")
+        
+        if start_param.startswith("file_"):
+            share_id = start_param.replace("file_", "")
+            logger.info(f"Обрабатываем ссылку на файл с share_id: {share_id}")
+            await handle_shared_file_download(message, share_id)
+            return
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
@@ -91,6 +130,7 @@ async def cmd_help(message: Message):
 • Теги для организации
 • Поиск по названию и описанию
 • Поддержка любых типов файлов
+• Создание ссылок для скачивания файлов
     """.format(
         max_size=Config.MAX_FILE_SIZE // (1024 * 1024)
     )
@@ -466,6 +506,7 @@ async def callback_main_menu(callback: CallbackQuery):
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
 📊 **Экспорт:** Создайте CSV со списком файлов
+🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -693,16 +734,98 @@ async def callback_confirm_delete(callback: CallbackQuery):
     else:
         await callback.answer("❌ Ошибка при удалении файла!")
 
-@router.callback_query(F.data == "cancel_delete")
-async def callback_cancel_delete(callback: CallbackQuery):
-    """Callback для отмены удаления"""
-    keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
-    keyboard.adjust(2)
+@router.callback_query(F.data.startswith("share_"))
+async def callback_share_file(callback: CallbackQuery):
+    """Callback для генерации ссылки на файл"""
+    record_id = callback.data.replace("share_", "")
     
-    await callback.message.answer("❌ Удаление отменено.", reply_markup=keyboard.as_markup())
-    await callback.answer()
+    # Получаем информацию о файле
+    file_data = await db.get_file_by_record_id(record_id)
+    
+    if not file_data:
+        await callback.answer("❌ Файл не найден!")
+        return
+    
+    # Проверяем, что файл принадлежит пользователю
+    _, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id = file_data
+    
+    if user_id != callback.from_user.id:
+        await callback.answer("❌ У вас нет доступа к этому файлу!")
+        return
+    
+    try:
+        # Генерируем уникальную ссылку для файла
+        import hashlib
+        import time
+        
+        # Создаем уникальный хеш
+        unique_string = f"{file_id}_{user_id}_{record_id}_{int(time.time())}"
+        share_id = hashlib.md5(unique_string.encode()).hexdigest()[:12]
+        
+        # Сохраняем информацию о ссылке в базе данных
+        success = await db.add_share_link(share_id, file_id, user_id, record_id)
+        
+        if success:
+            file_size_mb = file_size / (1024 * 1024)
+            share_text = f"""
+🔗 **Ссылка для скачивания файла**
+
+📄 Файл: {file_name}
+📏 Размер: {file_size_mb:.2f} MB
+📅 Загружен: {datetime.fromisoformat(upload_date).strftime('%d.%m.%Y %H:%M')}
+
+🔗 **Ссылка для скачивания:**
+{get_bot_share_url(share_id)}
+
+💡 **Как использовать:**
+1. Скопируйте ссылку и отправьте другу
+2. Или просто перешлите это сообщение другу
+3. При переходе по ссылке файл будет отправлен автоматически
+
+⚠️ **Внимание:** Ссылка действительна 24 часа
+            """
+            
+            keyboard = InlineKeyboardBuilder()
+            keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+            keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+            keyboard.adjust(2)
+            
+            await callback.message.answer(share_text, reply_markup=keyboard.as_markup())
+            await callback.answer("✅ Ссылка создана!")
+            
+            # Логируем создание ссылки
+            logger.info(f"Пользователь {user_id} создал ссылку для файла {file_name} (share_id: {share_id})")
+        else:
+            await callback.answer("❌ Ошибка при создании ссылки!")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при создании ссылки: {e}")
+        await callback.answer("❌ Ошибка при создании ссылки!")
+
+
+
+async def generate_share_link(file_id: str, user_id: int, record_id: int) -> str:
+    """Генерирует уникальную ссылку для файла"""
+    try:
+        # Создаем уникальный ID для ссылки
+        import hashlib
+        import time
+        
+        # Создаем уникальный хеш
+        unique_string = f"{file_id}_{user_id}_{record_id}_{int(time.time())}"
+        share_id = hashlib.md5(unique_string.encode()).hexdigest()[:12]
+        
+        # Сохраняем информацию о ссылке в базе данных
+        success = await db.add_share_link(share_id, file_id, user_id, record_id)
+        
+        if success:
+            return share_id
+        else:
+            return None
+            
+    except Exception as e:
+        logger.error(f"Ошибка при генерации ссылки: {e}")
+        return None
 
 async def create_files_export(user_id: int, files: list) -> tuple[str, io.BytesIO]:
     """Создает экспорт списка файлов в формате CSV"""
@@ -824,9 +947,10 @@ async def show_files_list(message: Message, files: list, title: str):
         
         files_text += "\n"
         
-        # Добавляем кнопки для скачивания и удаления файла
+        # Добавляем кнопки для скачивания, удаления и шаринга файла
         short_name = file_name[:12] if len(file_name) > 12 else file_name
         keyboard.button(text=f"📥 {short_name}", callback_data=f"download_{record_id}")
+        keyboard.button(text=f"🔗 Поделиться", callback_data=f"share_{record_id}")
         keyboard.button(text=f"🗑️ Удалить", callback_data=f"delete_{record_id}")
     
     if len(files) > 8:
@@ -839,4 +963,130 @@ async def show_files_list(message: Message, files: list, title: str):
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(2)  # По две кнопки в строке
     
-    await message.answer(files_text, reply_markup=keyboard.as_markup()) 
+    await message.answer(files_text, reply_markup=keyboard.as_markup())
+
+async def handle_shared_file_download(message: Message, share_id: str):
+    """Обработчик скачивания файла по ссылке"""
+    logger.info(f"Начинаем обработку ссылки: {share_id}")
+    try:
+        # Получаем информацию о ссылке
+        share_data = await db.get_share_link(share_id)
+        logger.info(f"Получены данные ссылки: {share_data}")
+        
+        if not share_data:
+            logger.warning(f"Ссылка {share_id} не найдена или недействительна")
+            await message.answer("❌ **Ссылка недействительна или истекла!**\n\nВозможные причины:\n• Ссылка была удалена\n• Истек срок действия (24 часа)\n• Файл был удален")
+            return
+        
+        # Распаковываем данные из share_data
+        share_id, file_id, user_id, record_id, created_date, expires_date, is_active, file_name, file_size, file_type, category, description, tags = share_data
+        
+        # Форматируем информацию о файле
+        file_size_mb = file_size / (1024 * 1024)
+        created_date_str = datetime.fromisoformat(created_date).strftime('%d.%m.%Y %H:%M')
+        expires_date_str = datetime.fromisoformat(expires_date).strftime('%d.%m.%Y %H:%M')
+        
+        # Создаем сообщение с информацией о файле
+        file_info = f"""
+🔗 **Файл по ссылке**
+
+📄 **Название:** {file_name}
+📏 **Размер:** {file_size_mb:.2f} MB
+📁 **Тип:** {file_type}
+📅 **Загружен:** {created_date_str}
+⏰ **Действует до:** {expires_date_str}
+        """
+        
+        if description:
+            file_info += f"\n📝 **Описание:** {description}"
+        
+        if tags:
+            file_info += f"\n🏷️ **Теги:** {tags}"
+        
+        # Создаем клавиатуру для скачивания
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="📥 Скачать файл", callback_data=f"download_shared_{share_id}")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        await message.answer(file_info, reply_markup=keyboard.as_markup())
+        
+        # Сразу отправляем файл пользователю
+        try:
+            await message.answer_document(
+                document=file_id,
+                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+            )
+            logger.info(f"Файл {file_name} отправлен пользователю {message.from_user.id}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке файла: {e}")
+            await message.answer("❌ Ошибка при отправке файла. Попробуйте скачать через кнопку выше.")
+        
+        # Логируем обращение к ссылке
+        logger.info(f"Пользователь {message.from_user.id} перешел по ссылке {share_id} для файла {file_name}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при обработке ссылки {share_id}: {e}")
+        await message.answer("❌ Произошла ошибка при обработке ссылки!")
+
+def get_bot_share_url(share_id: str) -> str:
+    """Получить ссылку через бота с реальным именем бота"""
+    from config.config import Config
+    bot_username = Config.BOT_USERNAME or "your_bot_username"
+    return f"https://t.me/{bot_username}?start=file_{share_id}"
+
+async def get_direct_file_url(file_id: str) -> str:
+    """Получить прямую ссылку на файл через Telegram File API"""
+    from src.config.config import Config
+    import aiohttp
+    
+    bot_token = Config.BOT_TOKEN
+    api_url = f"https://api.telegram.org/bot{bot_token}/getFile"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(api_url, json={"file_id": file_id}) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("ok"):
+                        file_path = data["result"]["file_path"]
+                        return f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+                    else:
+                        logger.error(f"Telegram API вернул ошибку: {data}")
+                else:
+                    logger.error(f"HTTP ошибка {response.status}: {await response.text()}")
+    except Exception as e:
+        logger.error(f"Ошибка при получении прямой ссылки: {e}")
+    
+    return None
+
+@router.callback_query(F.data.startswith("download_shared_"))
+async def callback_download_shared_file(callback: CallbackQuery):
+    """Callback для скачивания файла по ссылке"""
+    share_id = callback.data.replace("download_shared_", "")
+    
+    try:
+        # Получаем информацию о ссылке
+        share_data = await db.get_share_link(share_id)
+        
+        if not share_data:
+            await callback.answer("❌ Ссылка недействительна или истекла!")
+            return
+        
+        # Распаковываем данные
+        share_id, file_id, user_id, record_id, created_date, expires_date, is_active, file_name, file_size, file_type, category, description, tags = share_data
+        
+        # Отправляем файл
+        await callback.message.answer_document(
+            document=file_id,
+            caption=f"📄 **{file_name}**\n📏 {file_size / (1024 * 1024):.2f} MB\n📁 {file_type}"
+        )
+        
+        await callback.answer("✅ Файл отправлен!")
+        
+        # Логируем скачивание
+        logger.info(f"Пользователь {callback.from_user.id} скачал файл {file_name} по ссылке {share_id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при скачивании файла по ссылке: {e}")
+        await callback.answer("❌ Ошибка при скачивании файла!") 
