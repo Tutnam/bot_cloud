@@ -154,6 +154,24 @@ class Database:
             logger.error(f"Ошибка при удалении файла: {e}")
             return False
     
+    async def delete_file_by_record_id(self, record_id: int, user_id: int):
+        """Удалить файл из базы данных по ID записи"""
+        try:
+            # Преобразуем record_id в int, если он строка
+            if isinstance(record_id, str):
+                record_id = int(record_id)
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM files WHERE id = ? AND user_id = ?
+                ''', (record_id, user_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Ошибка при удалении файла по record_id: {e}")
+            return False
+    
     async def search_files(self, user_id: int, query: str):
         """Поиск файлов по названию или описанию"""
         try:

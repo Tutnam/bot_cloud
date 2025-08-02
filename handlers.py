@@ -35,10 +35,12 @@ async def cmd_start(message: Message):
 • /upload - Загрузить файл
 • /files - Показать ваши файлы
 • /search - Поиск файлов
+• /delete - Удаление файлов
 • /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
+🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -63,7 +65,13 @@ async def cmd_help(message: Message):
 **Управление файлами:**
 • /files - Показать все ваши файлы
 • /search <запрос> - Поиск файлов
+• /delete - Информация об удалении файлов
 • /stats - Статистика использования
+
+**Удаление файлов:**
+• Используйте кнопку "🗑️ Удалить" рядом с файлом
+• Подтверждение удаления для безопасности
+• Удаленные файлы нельзя восстановить
 
 **Ограничения:**
 • Максимальный размер файла: {max_size}MB
@@ -117,6 +125,11 @@ async def cmd_search(message: Message):
         return
     
     await show_files_list(message, files, f"🔍 Результаты поиска: '{query}'")
+
+@router.message(Command("delete"))
+async def cmd_delete(message: Message):
+    """Удаление файлов"""
+    await message.answer("🗑️ **Удаление файлов**\n\nИспользуйте кнопку '🗑️ Удалить' рядом с файлом в списке ваших файлов.\n\nКоманда: /files")
 
 @router.message(F.document)
 async def handle_document(message: Message, state: FSMContext):
@@ -414,10 +427,12 @@ async def callback_main_menu(callback: CallbackQuery):
 • /upload - Загрузить файл
 • /files - Показать ваши файлы
 • /search - Поиск файлов
+• /delete - Удаление файлов
 • /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
+🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
     """
     
     keyboard = InlineKeyboardBuilder()
@@ -561,6 +576,101 @@ async def callback_download_file(callback: CallbackQuery):
         logger.error(f"Ошибка при отправке файла: {e}")
         await callback.answer("❌ Ошибка при отправке файла!")
 
+@router.callback_query(F.data.startswith("delete_"))
+async def callback_delete_file(callback: CallbackQuery):
+    """Callback для удаления файла"""
+    record_id = callback.data.replace("delete_", "")
+    
+    # Получаем информацию о файле
+    file_data = await db.get_file_by_record_id(record_id)
+    
+    if not file_data:
+        await callback.answer("❌ Файл не найден!")
+        return
+    
+    # Проверяем, что файл принадлежит пользователю
+    _, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id = file_data
+    
+    if user_id != callback.from_user.id:
+        await callback.answer("❌ У вас нет доступа к этому файлу!")
+        return
+    
+    # Создаем клавиатуру подтверждения
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Да, удалить", callback_data=f"confirm_delete_{record_id}")
+    keyboard.button(text="❌ Отмена", callback_data="cancel_delete")
+    keyboard.adjust(2)
+    
+    file_size_mb = file_size / (1024 * 1024)
+    confirm_text = f"""
+🗑️ **Подтверждение удаления**
+
+📄 Файл: {file_name}
+📏 Размер: {file_size_mb:.2f} MB
+📅 Загружен: {datetime.fromisoformat(upload_date).strftime('%d.%m.%Y %H:%M')}
+
+⚠️ **Внимание:** Это действие нельзя отменить!
+    """
+    
+    await callback.message.answer(confirm_text, reply_markup=keyboard.as_markup())
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("confirm_delete_"))
+async def callback_confirm_delete(callback: CallbackQuery):
+    """Callback для подтверждения удаления файла"""
+    record_id = callback.data.replace("confirm_delete_", "")
+    
+    # Получаем информацию о файле
+    file_data = await db.get_file_by_record_id(record_id)
+    
+    if not file_data:
+        await callback.answer("❌ Файл не найден!")
+        return
+    
+    # Проверяем, что файл принадлежит пользователю
+    _, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id = file_data
+    
+    if user_id != callback.from_user.id:
+        await callback.answer("❌ У вас нет доступа к этому файлу!")
+        return
+    
+    # Удаляем файл из базы данных
+    success = await db.delete_file_by_record_id(record_id, user_id)
+    
+    if success:
+        file_size_mb = file_size / (1024 * 1024)
+        success_text = f"""
+✅ **Файл успешно удален!**
+
+📄 Файл: {file_name}
+📏 Размер: {file_size_mb:.2f} MB
+🗑️ Удален: {datetime.now().strftime('%d.%m.%Y %H:%M')}
+        """
+        
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(2)
+        
+        await callback.message.answer(success_text, reply_markup=keyboard.as_markup())
+        await callback.answer("✅ Файл удален!")
+        
+        # Логируем удаление
+        logger.info(f"Пользователь {user_id} удалил файл {file_name} (record_id: {record_id})")
+    else:
+        await callback.answer("❌ Ошибка при удалении файла!")
+
+@router.callback_query(F.data == "cancel_delete")
+async def callback_cancel_delete(callback: CallbackQuery):
+    """Callback для отмены удаления"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)
+    
+    await callback.message.answer("❌ Удаление отменено.", reply_markup=keyboard.as_markup())
+    await callback.answer()
+
 async def show_user_files(message: Message, user_id: int):
     """Показать файлы пользователя"""
     files = await db.get_user_files(user_id)
@@ -594,9 +704,10 @@ async def show_files_list(message: Message, files: list, title: str):
         
         files_text += "\n"
         
-        # Добавляем кнопку для скачивания файла (используем record_id)
-        short_name = file_name[:15] if len(file_name) > 15 else file_name
+        # Добавляем кнопки для скачивания и удаления файла
+        short_name = file_name[:12] if len(file_name) > 12 else file_name
         keyboard.button(text=f"📥 {short_name}", callback_data=f"download_{record_id}")
+        keyboard.button(text=f"🗑️ Удалить", callback_data=f"delete_{record_id}")
     
     if len(files) > 8:
         files_text += f"... и еще {len(files) - 8} файлов"
@@ -605,6 +716,6 @@ async def show_files_list(message: Message, files: list, title: str):
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
-    keyboard.adjust(1)  # По одной кнопке в строке
+    keyboard.adjust(2)  # По две кнопки в строке
     
     await message.answer(files_text, reply_markup=keyboard.as_markup()) 
