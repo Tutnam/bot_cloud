@@ -24,6 +24,7 @@ db = Database()
 class FileUploadStates(StatesGroup):
     waiting_for_description = State()
     waiting_for_tags = State()
+    waiting_for_search_query = State()
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
@@ -392,6 +393,35 @@ async def handle_tags(message: Message, state: FSMContext):
     
     await state.clear()
 
+@router.message(FileUploadStates.waiting_for_search_query)
+async def handle_search_query(message: Message, state: FSMContext):
+    """Обработчик поискового запроса"""
+    query = message.text.strip()
+    
+    if not query:
+        await message.answer("🔍 Пожалуйста, введите поисковый запрос:")
+        return
+    
+    # Выполняем поиск
+    files = await db.search_files(message.from_user.id, query)
+    
+    # Создаем клавиатуру с кнопками навигации
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🔍 Новый поиск", callback_data="search_files")
+    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)
+    
+    if not files:
+        await message.answer(
+            f"🔍 По запросу '{query}' ничего не найдено.\n\nПопробуйте другой запрос или проверьте правильность написания.",
+            reply_markup=keyboard.as_markup()
+        )
+    else:
+        await show_files_list(message, files, f"🔍 Результаты поиска: '{query}'")
+    
+    await state.clear()
+
 @router.callback_query(F.data == "show_files")
 async def callback_show_files(callback: CallbackQuery):
     """Callback для показа файлов"""
@@ -457,12 +487,29 @@ async def show_user_files_by_category(message: Message, user_id: int, category: 
     await show_files_list(message, files, f"📁 {category_name}:")
 
 @router.callback_query(F.data == "search_files")
-async def callback_search_files(callback: CallbackQuery):
+async def callback_search_files(callback: CallbackQuery, state: FSMContext):
     """Callback для поиска файлов"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.button(text="❌ Отменить поиск", callback_data="cancel_search")
+    keyboard.adjust(2)
     
     await callback.message.answer("🔍 Введите поисковый запрос:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_search_query)
+    await callback.answer()
+
+@router.callback_query(F.data == "cancel_search")
+async def callback_cancel_search(callback: CallbackQuery, state: FSMContext):
+    """Callback для отмены поиска"""
+    await state.clear()
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    keyboard.button(text="🔍 Поиск", callback_data="search_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)
+    
+    await callback.message.answer("❌ Поиск отменен.", reply_markup=keyboard.as_markup())
     await callback.answer()
 
 @router.callback_query(F.data == "show_stats")

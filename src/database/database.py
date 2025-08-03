@@ -188,16 +188,21 @@ class Database:
             return False
     
     async def search_files(self, user_id: int, query: str):
-        """Поиск файлов по названию или описанию"""
+        """Поиск файлов по названию, описанию, тегам или типу файла"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id 
                     FROM files 
-                    WHERE user_id = ? AND (file_name LIKE ? OR description LIKE ?)
+                    WHERE user_id = ? AND (
+                        file_name LIKE ? OR 
+                        description LIKE ? OR 
+                        tags LIKE ? OR 
+                        file_type LIKE ?
+                    )
                     ORDER BY upload_date DESC
-                ''', (user_id, f"%{query}%", f"%{query}%"))
+                ''', (user_id, f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"))
                 return cursor.fetchall()
         except Exception as e:
             logger.error(f"Ошибка при поиске файлов: {e}")
