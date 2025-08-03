@@ -73,27 +73,12 @@ async def cmd_start(message: Message):
     keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
+    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.adjust(2)
     
     await message.answer(welcome_text, reply_markup=keyboard.as_markup())
 
-@router.message()
-async def handle_all_messages(message: Message):
-    """Обработчик всех сообщений для отладки"""
-    logger.info(f"Получено сообщение: {message.text}")
-    logger.info(f"Тип сообщения: {type(message)}")
-    logger.info(f"От пользователя: {message.from_user.id}")
-    
-    # Если это команда start с параметрами, обрабатываем её
-    if message.text and message.text.startswith("/start "):
-        start_param = message.text.split()[1]
-        logger.info(f"Обрабатываем start с параметром: {start_param}")
-        
-        if start_param.startswith("file_"):
-            share_id = start_param.replace("file_", "")
-            logger.info(f"Обрабатываем ссылку на файл с share_id: {share_id}")
-            await handle_shared_file_download(message, share_id)
-            return
+# Удаляем этот обработчик, так как он блокирует обработку файлов
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
@@ -205,11 +190,13 @@ async def cmd_export(message: Message):
 @router.message(F.document)
 async def handle_document(message: Message, state: FSMContext):
     """Обработчик загрузки документов"""
+    logger.info(f"Получен документ от пользователя {message.from_user.id}")
     await handle_file_upload(message, state, message.document)
 
 @router.message(F.photo)
 async def handle_photo(message: Message, state: FSMContext):
     """Обработчик загрузки фото"""
+    logger.info(f"Получено фото от пользователя {message.from_user.id}")
     # Берем фото максимального размера
     photo = message.photo[-1]
     await handle_file_upload(message, state, photo)
@@ -217,41 +204,54 @@ async def handle_photo(message: Message, state: FSMContext):
 @router.message(F.video)
 async def handle_video(message: Message, state: FSMContext):
     """Обработчик загрузки видео"""
+    logger.info(f"Получено видео от пользователя {message.from_user.id}")
     await handle_file_upload(message, state, message.video)
 
 @router.message(F.audio)
 async def handle_audio(message: Message, state: FSMContext):
     """Обработчик загрузки аудио"""
+    logger.info(f"Получено аудио от пользователя {message.from_user.id}")
     await handle_file_upload(message, state, message.audio)
 
 @router.message(F.voice)
 async def handle_voice(message: Message, state: FSMContext):
     """Обработчик загрузки голосовых сообщений"""
+    logger.info(f"Получено голосовое сообщение от пользователя {message.from_user.id}")
     await handle_file_upload(message, state, message.voice)
 
 async def handle_file_upload(message: Message, state: FSMContext, file_obj):
     """Общий обработчик загрузки файлов"""
     user_id = message.from_user.id
     
+    logger.info(f"Начинаем обработку загрузки файла для пользователя {user_id}")
+    logger.info(f"Тип файлового объекта: {type(file_obj)}")
+    
     # Получаем информацию о файле
     file_id = file_obj.file_id
     file_extension = get_file_extension(file_obj)
+    
+    logger.info(f"File ID: {file_id}")
+    logger.info(f"File extension: {file_extension}")
     
     # Формируем имя файла
     if hasattr(file_obj, 'file_name') and file_obj.file_name:
         file_name = file_obj.file_name
     else:
-        # Если нет оригинального имени, создаем на основе типа
+        # Если нет оригинального имени, создаем уникальное имя на основе времени и типа
+        import time
+        timestamp = int(time.time())
+        unique_suffix = f"{timestamp}_{file_id[:6]}"
+        
         if isinstance(file_obj, PhotoSize):
-            file_name = f"photo_{file_id[:8]}.jpg"
+            file_name = f"photo_{unique_suffix}.jpg"
         elif isinstance(file_obj, Video):
-            file_name = f"video_{file_id[:8]}.mp4"
+            file_name = f"video_{unique_suffix}.mp4"
         elif isinstance(file_obj, Audio):
-            file_name = f"audio_{file_id[:8]}.mp3"
+            file_name = f"audio_{unique_suffix}.mp3"
         elif isinstance(file_obj, Voice):
-            file_name = f"voice_{file_id[:8]}.ogg"
+            file_name = f"voice_{unique_suffix}.ogg"
         else:
-            file_name = f"file_{file_id[:8]}.{file_extension}" if file_extension else f"file_{file_id[:8]}"
+            file_name = f"file_{unique_suffix}.{file_extension}" if file_extension else f"file_{unique_suffix}"
     
     file_size = file_obj.file_size
     
@@ -514,6 +514,7 @@ async def callback_main_menu(callback: CallbackQuery):
     keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
+    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.adjust(2)
     
     await callback.message.answer(welcome_text, reply_markup=keyboard.as_markup())
@@ -610,6 +611,14 @@ async def callback_download_file(callback: CallbackQuery):
     """Callback для скачивания файла"""
     record_id = callback.data.replace("download_", "")
     
+    # Проверяем, не является ли это ссылкой на общий файл
+    if record_id.startswith("shared_"):
+        logger.info(f"Обнаружен callback для скачивания общего файла: {record_id}")
+        # Обрабатываем как общий файл
+        share_id = record_id.replace("shared_", "")
+        await callback_download_shared_file(callback, share_id)
+        return
+    
     # Добавляем отладочную информацию
     logger.info(f"Попытка скачивания файла с record_id: {record_id}")
     
@@ -635,11 +644,11 @@ async def callback_download_file(callback: CallbackQuery):
         await callback.message.answer(f"📤 Отправляю файл: {file_name}")
         
         # Используем file_id для отправки файла
-        if file_type in ['jpg', 'jpeg', 'png', 'gif']:
+        if file_type in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
             await callback.message.answer_photo(file_id, caption=f"📄 {file_name}")
-        elif file_type in ['mp4', 'avi', 'mov']:
+        elif file_type in ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm']:
             await callback.message.answer_video(file_id, caption=f"📄 {file_name}")
-        elif file_type in ['mp3', 'wav', 'ogg']:
+        elif file_type in ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a']:
             await callback.message.answer_audio(file_id, caption=f"📄 {file_name}")
         else:
             await callback.message.answer_document(file_id, caption=f"📄 {file_name}")
@@ -803,6 +812,68 @@ async def callback_share_file(callback: CallbackQuery):
         await callback.answer("❌ Ошибка при создании ссылки!")
 
 
+@router.callback_query(F.data.startswith("select_file_"))
+async def callback_select_file(callback: CallbackQuery):
+    """Callback для выбора файла и отображения действий"""
+    record_id = callback.data.replace("select_file_", "")
+    
+    # Получаем информацию о файле
+    file_data = await db.get_file_by_record_id(record_id)
+    
+    if not file_data:
+        await callback.answer("❌ Файл не найден!")
+        return
+    
+    # Проверяем, что файл принадлежит пользователю
+    _, file_id, file_name, file_size, file_type, category, user_id, upload_date, description, tags, message_id, chat_id = file_data
+    
+    if user_id != callback.from_user.id:
+        await callback.answer("❌ У вас нет доступа к этому файлу!")
+        return
+    
+    # Форматируем информацию о файле
+    file_size_mb = file_size / (1024 * 1024)
+    upload_date_str = datetime.fromisoformat(upload_date).strftime('%d.%m.%Y %H:%M')
+    
+    # Создаем сообщение с информацией о выбранном файле
+    file_info = f"""
+📄 **Выбранный файл**
+
+📄 **Название:** {file_name}
+📏 **Размер:** {file_size_mb:.2f} MB
+📁 **Тип:** {file_type}
+📅 **Загружен:** {upload_date_str}
+    """
+    
+    if description:
+        file_info += f"\n📝 **Описание:** {description}"
+    
+    if tags:
+        file_info += f"\n🏷️ **Теги:** {tags}"
+    
+    # Создаем клавиатуру с действиями для выбранного файла
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📥 Скачать", callback_data=f"download_{record_id}")
+    keyboard.button(text="🔗 Поделиться", callback_data=f"share_{record_id}")
+    keyboard.button(text="🗑️ Удалить", callback_data=f"delete_{record_id}")
+    keyboard.button(text="🔙 Назад к списку", callback_data="show_files")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(2)  # По две кнопки в строке
+    
+    await callback.message.answer(file_info, reply_markup=keyboard.as_markup())
+    await callback.answer("✅ Файл выбран!")
+
+
+@router.callback_query(F.data == "cancel_delete")
+async def callback_cancel_delete(callback: CallbackQuery):
+    """Callback для отмены удаления файла"""
+    await callback.answer("❌ Удаление отменено!")
+    # Удаляем сообщение с подтверждением удаления
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        logger.error(f"Ошибка при удалении сообщения: {e}")
+
 
 async def generate_share_link(file_id: str, user_id: int, record_id: int) -> str:
     """Генерирует уникальную ссылку для файла"""
@@ -947,19 +1018,16 @@ async def show_files_list(message: Message, files: list, title: str):
         
         files_text += "\n"
         
-        # Добавляем кнопки для скачивания, удаления и шаринга файла
+        # Добавляем только кнопку "Выбрать" для каждого файла
         short_name = file_name[:12] if len(file_name) > 12 else file_name
         keyboard.button(text=f"📥 {short_name}", callback_data=f"download_{record_id}")
-        keyboard.button(text=f"🔗 Поделиться", callback_data=f"share_{record_id}")
-        keyboard.button(text=f"🗑️ Удалить", callback_data=f"delete_{record_id}")
+        keyboard.button(text=f"👆 Выбрать", callback_data=f"select_file_{record_id}")
     
     if len(files) > 8:
         files_text += f"... и еще {len(files) - 8} файлов"
     
     # Добавляем общие кнопки
-    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
-    keyboard.button(text="📊 Статистика", callback_data="show_stats")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(2)  # По две кнопки в строке
     
@@ -1013,10 +1081,27 @@ async def handle_shared_file_download(message: Message, share_id: str):
         
         # Сразу отправляем файл пользователю
         try:
-            await message.answer_document(
-                document=file_id,
-                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
-            )
+            # Отправляем файл в зависимости от его типа
+            if file_type in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                await message.answer_photo(
+                    photo=file_id,
+                    caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+                )
+            elif file_type in ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm']:
+                await message.answer_video(
+                    video=file_id,
+                    caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+                )
+            elif file_type in ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a']:
+                await message.answer_audio(
+                    audio=file_id,
+                    caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+                )
+            else:
+                await message.answer_document(
+                    document=file_id,
+                    caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+                )
             logger.info(f"Файл {file_name} отправлен пользователю {message.from_user.id}")
         except Exception as e:
             logger.error(f"Ошибка при отправке файла: {e}")
@@ -1060,10 +1145,12 @@ async def get_direct_file_url(file_id: str) -> str:
     
     return None
 
-@router.callback_query(F.data.startswith("download_shared_"))
-async def callback_download_shared_file(callback: CallbackQuery):
+async def callback_download_shared_file(callback: CallbackQuery, share_id: str = None):
     """Callback для скачивания файла по ссылке"""
-    share_id = callback.data.replace("download_shared_", "")
+    if share_id is None:
+        share_id = callback.data.replace("download_shared_", "")
+    
+    logger.info(f"Попытка скачивания файла по ссылке с share_id: {share_id}")
     
     try:
         # Получаем информацию о ссылке
@@ -1076,11 +1163,28 @@ async def callback_download_shared_file(callback: CallbackQuery):
         # Распаковываем данные
         share_id, file_id, user_id, record_id, created_date, expires_date, is_active, file_name, file_size, file_type, category, description, tags = share_data
         
-        # Отправляем файл
-        await callback.message.answer_document(
-            document=file_id,
-            caption=f"📄 **{file_name}**\n📏 {file_size / (1024 * 1024):.2f} MB\n📁 {file_type}"
-        )
+        # Отправляем файл в зависимости от его типа
+        file_size_mb = file_size / (1024 * 1024)
+        if file_type in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            await callback.message.answer_photo(
+                photo=file_id,
+                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+            )
+        elif file_type in ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm']:
+            await callback.message.answer_video(
+                video=file_id,
+                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+            )
+        elif file_type in ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a']:
+            await callback.message.answer_audio(
+                audio=file_id,
+                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+            )
+        else:
+            await callback.message.answer_document(
+                document=file_id,
+                caption=f"📄 **{file_name}**\n📏 {file_size_mb:.2f} MB\n📁 {file_type}"
+            )
         
         await callback.answer("✅ Файл отправлен!")
         
@@ -1089,4 +1193,32 @@ async def callback_download_shared_file(callback: CallbackQuery):
         
     except Exception as e:
         logger.error(f"Ошибка при скачивании файла по ссылке: {e}")
-        await callback.answer("❌ Ошибка при скачивании файла!") 
+        await callback.answer("❌ Ошибка при скачивании файла!")
+
+@router.callback_query(F.data.startswith("download_shared_"))
+async def callback_download_shared_file_handler(callback: CallbackQuery):
+    """Обработчик callback для скачивания файла по ссылке"""
+    await callback_download_shared_file(callback)
+
+@router.message()
+async def handle_all_messages(message: Message):
+    """Обработчик всех сообщений для отладки (ставить в самый конец файла!)"""
+    logger.info(f"Получено сообщение: {message.text}")
+    logger.info(f"Тип сообщения: {type(message)}")
+    logger.info(f"От пользователя: {message.from_user.id}")
+    
+    # Если это команда start с параметрами, обрабатываем её
+    if message.text and message.text.startswith("/start "):
+        start_param = message.text.split()[1]
+        logger.info(f"Обрабатываем start с параметром: {start_param}")
+        
+        if start_param.startswith("file_"):
+            share_id = start_param.replace("file_", "")
+            logger.info(f"Обрабатываем ссылку на файл с share_id: {share_id}")
+            await handle_shared_file_download(message, share_id)
+            return
+    
+    # Если сообщение пустое или None, просто логируем
+    if not message.text:
+        logger.info("Получено пустое сообщение (не текстовое), не обрабатываем")
+        return 

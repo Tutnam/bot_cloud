@@ -25,17 +25,10 @@ async def main():
     # Инициализируем бота и диспетчер
     bot = Bot(token=Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     
-    # Используем RedisStorage для продакшена
-    try:
-        storage = RedisStorage.from_url(
-            url=Config.REDIS_URL
-        )
-        logger.info("✅ Используется RedisStorage для хранения состояний")
-    except Exception as e:
-        logger.error(f"❌ Ошибка подключения к Redis: {e}")
-        logger.warning("⚠️ Переключаемся на MemoryStorage")
-        from aiogram.fsm.storage.memory import MemoryStorage
-        storage = MemoryStorage()
+    # Временно используем MemoryStorage для отладки
+    from aiogram.fsm.storage.memory import MemoryStorage
+    storage = MemoryStorage()
+    logger.info("✅ Используется MemoryStorage для хранения состояний")
     
     dp = Dispatcher(storage=storage)
     
@@ -54,8 +47,12 @@ async def main():
     logger.info("🤖 FileStorage Bot запускается...")
     
     try:
-        # Запускаем бота
-        await dp.start_polling(bot)
+        # Запускаем бота с настройками для избежания конфликтов
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query"],
+            drop_pending_updates=True
+        )
         logger.info("🛑 Бот запущен")
     except KeyboardInterrupt:
         logger.info("🛑 Бот остановлен пользователем")
