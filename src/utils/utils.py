@@ -194,4 +194,36 @@ def format_date(date_str: str) -> str:
         dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         return dt.strftime('%d.%m.%Y %H:%M')
     except:
-        return date_str 
+        return date_str
+
+def get_link_category_icon(category: str) -> str:
+    """Возвращает эмодзи для категории ссылок"""
+    icons = {
+        'general': '🔗',
+        'web': '🌐',
+        'education': '📚',
+        'work': '💼',
+        'entertainment': '🎵',
+        'shopping': '🛒',
+        'social': '👥',
+        'news': '📰',
+        'tools': '🛠️',
+        'games': '🎮'
+    }
+    return icons.get(category, '🔗')
+
+def get_link_category_name(category: str) -> str:
+    """Возвращает название категории ссылок на русском"""
+    names = {
+        'general': 'Общие',
+        'web': 'Веб-сайты',
+        'education': 'Образование',
+        'work': 'Работа',
+        'entertainment': 'Развлечения',
+        'shopping': 'Покупки',
+        'social': 'Социальные сети',
+        'news': 'Новости',
+        'tools': 'Инструменты',
+        'games': 'Игры'
+    }
+    return names.get(category, 'Общие') 

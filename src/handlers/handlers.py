@@ -15,7 +15,7 @@ import csv
 
 from src.config.config import Config
 from src.database.database import Database
-from src.utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name
+from src.utils.utils import format_file_size, get_file_extension, get_file_category, get_category_icon, get_category_name, get_link_category_icon, get_link_category_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -25,6 +25,12 @@ class FileUploadStates(StatesGroup):
     waiting_for_description = State()
     waiting_for_tags = State()
     waiting_for_search_query = State()
+    waiting_for_link_title = State()
+    waiting_for_link_url = State()
+    waiting_for_link_description = State()
+    waiting_for_link_category = State()
+    waiting_for_link_tags = State()
+    waiting_for_link_search_query = State()
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
@@ -52,7 +58,7 @@ async def cmd_start(message: Message):
     welcome_text = """
 🤖 **Добро пожаловать в FileStorage Bot!**
 
-Этот бот поможет вам хранить и управлять вашими файлами.
+Этот бот поможет вам хранить и управлять вашими файлами и ссылками.
 
 📁 **Основные команды:**
 • /upload - Загрузить файл
@@ -64,6 +70,7 @@ async def cmd_start(message: Message):
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
+🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
 📊 **Экспорт:** Создайте CSV со списком файлов
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
@@ -72,6 +79,7 @@ async def cmd_start(message: Message):
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
     keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
+    keyboard.button(text="🔗 Ссылки", callback_data="show_links")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
     keyboard.button(text="📊 Экспорт", callback_data="export_files")
@@ -98,6 +106,12 @@ async def cmd_help(message: Message):
 • /export - Экспорт файлов в CSV
 • /stats - Статистика использования
 
+**Управление ссылками:**
+• Просто вставьте ссылку в чат - бот предложит её добавить
+• Или используйте кнопку "🔗 Ссылки" в главном меню
+• Поиск и категоризация ссылок
+• Удаление ненужных ссылок
+
 **Удаление файлов:**
 • Используйте кнопку "🗑️ Удалить" рядом с файлом
 • Подтверждение удаления для безопасности
@@ -117,6 +131,7 @@ async def cmd_help(message: Message):
 • Поиск по названию и описанию
 • Поддержка любых типов файлов
 • Создание ссылок для скачивания файлов
+• Автоматическое добавление ссылок из чата
     """.format(
         max_size=Config.MAX_FILE_SIZE // (1024 * 1024)
     )
@@ -539,7 +554,7 @@ async def callback_main_menu(callback: CallbackQuery):
     welcome_text = """
 🤖 **Добро пожаловать в FileStorage Bot!**
 
-Этот бот поможет вам хранить и управлять вашими файлами.
+Этот бот поможет вам хранить и управлять вашими файлами и ссылками.
 
 📁 **Основные команды:**
 • /upload - Загрузить файл
@@ -551,6 +566,7 @@ async def callback_main_menu(callback: CallbackQuery):
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
+🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
 📊 **Экспорт:** Создайте CSV со списком файлов
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
@@ -559,6 +575,7 @@ async def callback_main_menu(callback: CallbackQuery):
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
     keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
+    keyboard.button(text="🔗 Ссылки", callback_data="show_links")
     keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="📊 Статистика", callback_data="show_stats")
     keyboard.button(text="📊 Экспорт", callback_data="export_files")
@@ -706,7 +723,7 @@ async def callback_download_file(callback: CallbackQuery):
         logger.error(f"Ошибка при отправке файла: {e}")
         await callback.answer("❌ Ошибка при отправке файла!")
 
-@router.callback_query(F.data.startswith("delete_"))
+@router.callback_query(F.data.startswith("delete_") & ~F.data.startswith("delete_link_"))
 async def callback_delete_file(callback: CallbackQuery):
     """Callback для удаления файла"""
     record_id = callback.data.replace("delete_", "")
@@ -745,7 +762,7 @@ async def callback_delete_file(callback: CallbackQuery):
     await callback.message.answer(confirm_text, reply_markup=keyboard.as_markup())
     await callback.answer()
 
-@router.callback_query(F.data.startswith("confirm_delete_"))
+@router.callback_query(F.data.startswith("confirm_delete_") & ~F.data.startswith("confirm_delete_link_"))
 async def callback_confirm_delete(callback: CallbackQuery):
     """Callback для подтверждения удаления файла"""
     record_id = callback.data.replace("confirm_delete_", "")
@@ -933,7 +950,7 @@ async def generate_share_link(file_id: str, user_id: int, record_id: int) -> str
         unique_string = f"{file_id}_{user_id}_{record_id}_{int(time.time())}"
         share_id = hashlib.md5(unique_string.encode()).hexdigest()[:12]
         
-        # Сохраняем информацию о ссылке в базе данных
+        # Сохраняем информацию о ссылке в базу данных
         success = await db.add_share_link(share_id, file_id, user_id, record_id)
         
         if success:
@@ -1244,11 +1261,418 @@ async def callback_download_shared_file(callback: CallbackQuery, share_id: str =
 
 @router.callback_query(F.data.startswith("download_shared_"))
 async def callback_download_shared_file_handler(callback: CallbackQuery):
-    """Обработчик callback для скачивания файла по ссылке"""
-    await callback_download_shared_file(callback)
+    """Обработчик для скачивания файла по общей ссылке"""
+    share_id = callback.data.replace("download_shared_", "")
+    await callback_download_shared_file(callback, share_id)
+
+# Обработчики для работы со ссылками
+@router.callback_query(F.data == "show_links")
+async def callback_show_links(callback: CallbackQuery):
+    """Показать меню ссылок"""
+    await show_link_categories(callback.message, callback.from_user.id)
+    await callback.answer()
+
+async def show_link_categories(message: Message, user_id: int):
+    """Показать категории ссылок пользователя"""
+    categories = await db.get_user_link_categories(user_id)
+    
+    if not categories:
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        await message.answer("📝 У вас пока нет сохраненных ссылок.\n\n➕ Нажмите 'Добавить ссылку' чтобы создать первую ссылку!", reply_markup=keyboard.as_markup())
+        return
+    
+    text = "🔗 **Ваши ссылки по категориям:**\n\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📋 Все ссылки", callback_data="all_links")
+    
+    for category, count in categories:
+        category_name = get_link_category_name(category)
+        icon = get_link_category_icon(category)
+        keyboard.button(text=f"{icon} {category_name} ({count})", callback_data=f"link_category_{category}")
+    
+    keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
+    keyboard.button(text="🔍 Поиск ссылок", callback_data="search_links")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(1)
+    
+    await message.answer(text, reply_markup=keyboard.as_markup())
+
+@router.callback_query(F.data == "all_links")
+async def callback_show_all_links(callback: CallbackQuery):
+    """Показать все ссылки пользователя"""
+    await show_user_links_by_category(callback.message, callback.from_user.id, None)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("link_category_"))
+async def callback_show_link_category(callback: CallbackQuery):
+    """Показать ссылки определенной категории"""
+    category = callback.data.replace("link_category_", "")
+    await show_user_links_by_category(callback.message, callback.from_user.id, category)
+    await callback.answer()
+
+async def show_user_links_by_category(message: Message, user_id: int, category: str = None):
+    """Показать ссылки пользователя по категории"""
+    if category:
+        links = await db.get_user_links_by_category(user_id, category)
+        category_name = get_link_category_name(category)
+        title = f"🔗 Ссылки: {category_name}"
+    else:
+        links = await db.get_user_links(user_id)
+        title = "🔗 Все ссылки"
+    
+    if not links:
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
+        keyboard.button(text="🔙 Назад к категориям", callback_data="show_links")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        await message.answer("📝 В этой категории пока нет ссылок.", reply_markup=keyboard.as_markup())
+        return
+    
+    await show_links_list(message, links, title)
+
+async def show_links_list(message: Message, links: list, title: str):
+    """Показать список ссылок"""
+    text = f"{title}\n\n"
+    
+    for i, link in enumerate(links[:10], 1):  # Показываем первые 10 ссылок
+        link_id, title, url, description, category, tags, created_date = link
+        
+        # Обрезаем длинные URL для отображения
+        display_url = url[:50] + "..." if len(url) > 50 else url
+        
+        text += f"{i}. **{title}**\n"
+        text += f"🔗 {display_url}\n"
+        if description:
+            text += f"📝 {description[:100]}{'...' if len(description) > 100 else ''}\n"
+        if tags:
+            text += f"🏷️ {tags}\n"
+        text += f"📅 {created_date[:10]}\n\n"
+    
+    if len(links) > 10:
+        text += f"... и еще {len(links) - 10} ссылок"
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    # Добавляем кнопки для каждой ссылки (первые 5)
+    for i, link in enumerate(links[:5], 1):
+        link_id = link[0]
+        keyboard.button(text=f"🔗 {i}. {link[1][:20]}...", callback_data=f"view_link_{link_id}")
+    
+    keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
+    keyboard.button(text="🔍 Поиск ссылок", callback_data="search_links")
+    keyboard.button(text="🔙 Назад к категориям", callback_data="show_links")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(1)
+    
+    await message.answer(text, reply_markup=keyboard.as_markup())
+
+@router.callback_query(F.data == "add_link")
+async def callback_add_link(callback: CallbackQuery, state: FSMContext):
+    """Начать добавление ссылки"""
+    await state.clear()
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    
+    await callback.message.answer("🔗 **Добавление новой ссылки**\n\n📝 Введите название ссылки:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_title)
+    await callback.answer()
+
+@router.callback_query(F.data == "cancel_add_link")
+async def callback_cancel_add_link(callback: CallbackQuery, state: FSMContext):
+    """Отменить добавление ссылки"""
+    await state.clear()
+    await show_link_categories(callback.message, callback.from_user.id)
+    await callback.answer()
+
+@router.message(FileUploadStates.waiting_for_link_title)
+async def handle_link_title(message: Message, state: FSMContext):
+    """Обработка названия ссылки"""
+    await state.update_data(title=message.text)
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    
+    await message.answer("🔗 Теперь введите URL ссылки:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_url)
+
+@router.message(FileUploadStates.waiting_for_link_url)
+async def handle_link_url(message: Message, state: FSMContext):
+    """Обработка URL ссылки"""
+    url = message.text.strip()
+    
+    # Простая валидация URL
+    if not url.startswith(('http://', 'https://')):
+        await message.answer("❌ Пожалуйста, введите корректный URL (начинающийся с http:// или https://)")
+        return
+    
+    await state.update_data(url=url)
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="⏭️ Пропустить", callback_data="skip_link_description")
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    
+    await message.answer("📝 Добавьте описание ссылки (или отправьте пустое сообщение для пропуска):", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_description)
+
+@router.callback_query(F.data == "skip_link_description")
+async def callback_skip_link_description(callback: CallbackQuery, state: FSMContext):
+    """Пропустить описание ссылки"""
+    await state.update_data(description=None)
+    
+    # Показываем выбор категории
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📁 Общие", callback_data="link_cat_general")
+    keyboard.button(text="🌐 Веб-сайты", callback_data="link_cat_web")
+    keyboard.button(text="📚 Образование", callback_data="link_cat_education")
+    keyboard.button(text="💼 Работа", callback_data="link_cat_work")
+    keyboard.button(text="🎵 Развлечения", callback_data="link_cat_entertainment")
+    keyboard.button(text="🛒 Покупки", callback_data="link_cat_shopping")
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    keyboard.adjust(2)
+    
+    await callback.message.answer("📂 Выберите категорию для ссылки:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_category)
+    await callback.answer()
+
+@router.message(FileUploadStates.waiting_for_link_description)
+async def handle_link_description(message: Message, state: FSMContext):
+    """Обработка описания ссылки"""
+    description = message.text if message.text.strip() else None
+    await state.update_data(description=description)
+    
+    # Показываем выбор категории
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📁 Общие", callback_data="link_cat_general")
+    keyboard.button(text="🌐 Веб-сайты", callback_data="link_cat_web")
+    keyboard.button(text="📚 Образование", callback_data="link_cat_education")
+    keyboard.button(text="💼 Работа", callback_data="link_cat_work")
+    keyboard.button(text="🎵 Развлечения", callback_data="link_cat_entertainment")
+    keyboard.button(text="🛒 Покупки", callback_data="link_cat_shopping")
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    keyboard.adjust(2)
+    
+    await message.answer("📂 Выберите категорию для ссылки:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_category)
+
+@router.callback_query(F.data.startswith("link_cat_"))
+async def callback_link_category(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора категории ссылки"""
+    category = callback.data.replace("link_cat_", "")
+    await state.update_data(category=category)
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="⏭️ Пропустить", callback_data="skip_link_tags")
+    keyboard.button(text="❌ Отменить", callback_data="cancel_add_link")
+    
+    await callback.message.answer("🏷️ Добавьте теги через запятую (или отправьте пустое сообщение для пропуска):", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_tags)
+    await callback.answer()
+
+@router.callback_query(F.data == "skip_link_tags")
+async def callback_skip_link_tags(callback: CallbackQuery, state: FSMContext):
+    """Пропустить теги ссылки"""
+    await state.update_data(tags=None)
+    await save_link(callback, state)
+    await callback.answer()
+
+@router.message(FileUploadStates.waiting_for_link_tags)
+async def handle_link_tags(message: Message, state: FSMContext):
+    """Обработка тегов ссылки"""
+    tags = message.text if message.text.strip() else None
+    await state.update_data(tags=tags)
+    
+    # Создаем временное сообщение для callback
+    class TempCallback:
+        def __init__(self, message):
+            self.message = message
+            self.from_user = message.from_user
+    
+    temp_callback = TempCallback(message)
+    await save_link(temp_callback, state)
+
+async def save_link(callback, state: FSMContext):
+    """Сохранить ссылку в базу данных"""
+    data = await state.get_data()
+    
+    # Проверяем, существует ли уже такая ссылка
+    existing_link = await db.check_link_exists(callback.from_user.id, data['url'])
+    
+    if existing_link:
+        # Ссылка уже существует
+        link_id, title, url, description, category, tags, created_date = existing_link
+        
+        await state.clear()
+        
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
+        keyboard.button(text="➕ Добавить еще", callback_data="add_link")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        duplicate_text = f"""
+⚠️ **Ссылка уже существует!**
+
+📝 Название: {title}
+🔗 URL: {url}
+📂 Категория: {get_link_category_name(category)}
+📅 Добавлена: {created_date[:10]}
+
+Эта ссылка уже была добавлена ранее.
+        """
+        
+        await callback.message.answer(duplicate_text, reply_markup=keyboard.as_markup())
+        return
+    
+    result = await db.add_user_link(
+        user_id=callback.from_user.id,
+        title=data['title'],
+        url=data['url'],
+        description=data.get('description'),
+        category=data.get('category', 'general'),
+        tags=data.get('tags')
+    )
+    
+    await state.clear()
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
+    keyboard.button(text="➕ Добавить еще", callback_data="add_link")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(1)
+    
+    if result:
+        success_text = f"""
+✅ **Ссылка успешно сохранена!**
+
+📝 Название: {data['title']}
+🔗 URL: {data['url']}
+📂 Категория: {get_link_category_name(data.get('category', 'general'))}
+📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}
+        """
+        await callback.message.answer(success_text, reply_markup=keyboard.as_markup())
+    else:
+        await callback.message.answer("❌ Ошибка при сохранении ссылки. Попробуйте еще раз.", reply_markup=keyboard.as_markup())
+
+@router.callback_query(F.data.startswith("view_link_"))
+async def callback_view_link(callback: CallbackQuery):
+    """Просмотр конкретной ссылки"""
+    link_id = int(callback.data.replace("view_link_", ""))
+    
+    link = await db.get_user_link_by_id(link_id, callback.from_user.id)
+    
+    if not link:
+        await callback.answer("❌ Ссылка не найдена")
+        return
+    
+    link_id, title, url, description, category, tags, created_date = link
+    
+    text = f"""
+🔗 **{title}**
+
+🔗 URL: `{url}`
+📂 Категория: {get_link_category_name(category)}
+📅 Дата добавления: {created_date[:10]}
+
+"""
+    
+    if description:
+        text += f"📝 Описание: {description}\n\n"
+    
+    if tags:
+        text += f"🏷️ Теги: {tags}\n\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🔗 Открыть ссылку", url=url)
+    keyboard.button(text="🗑️ Удалить", callback_data=f"delete_link_{link_id}")
+    keyboard.button(text="🔙 Назад", callback_data="show_links")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(1)
+    
+    await callback.message.answer(text, reply_markup=keyboard.as_markup())
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("delete_link_"))
+async def callback_delete_link(callback: CallbackQuery):
+    """Удаление ссылки"""
+    link_id = int(callback.data.replace("delete_link_", ""))
+    
+    link = await db.get_user_link_by_id(link_id, callback.from_user.id)
+    
+    if not link:
+        await callback.answer("❌ Ссылка не найдена")
+        return
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Да, удалить", callback_data=f"confirm_delete_link_{link_id}")
+    keyboard.button(text="❌ Отменить", callback_data="show_links")
+    keyboard.adjust(1)
+    
+    await callback.message.answer(f"🗑️ Вы уверены, что хотите удалить ссылку **{link[1]}**?", reply_markup=keyboard.as_markup())
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("confirm_delete_link_"))
+async def callback_confirm_delete_link(callback: CallbackQuery):
+    """Подтверждение удаления ссылки"""
+    link_id = int(callback.data.replace("confirm_delete_link_", ""))
+    
+    success = await db.delete_user_link(link_id, callback.from_user.id)
+    
+    if success:
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        await callback.message.answer("✅ Ссылка успешно удалена!", reply_markup=keyboard.as_markup())
+    else:
+        await callback.message.answer("❌ Ошибка при удалении ссылки")
+    
+    await callback.answer()
+
+@router.callback_query(F.data == "search_links")
+async def callback_search_links(callback: CallbackQuery, state: FSMContext):
+    """Поиск ссылок"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="❌ Отменить", callback_data="show_links")
+    
+    await callback.message.answer("🔍 Введите поисковый запрос для поиска по ссылкам:", reply_markup=keyboard.as_markup())
+    await state.set_state(FileUploadStates.waiting_for_link_search_query)
+    await callback.answer()
+
+@router.message(FileUploadStates.waiting_for_link_search_query)
+async def handle_link_search_query(message: Message, state: FSMContext):
+    """Обработка поискового запроса для ссылок"""
+    query = message.text.strip()
+    await state.clear()
+    
+    if not query:
+        await message.answer("❌ Поисковый запрос не может быть пустым")
+        return
+    
+    links = await db.search_user_links(message.from_user.id, query)
+    
+    if not links:
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="🔍 Новый поиск", callback_data="search_links")
+        keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
+        keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+        keyboard.adjust(1)
+        
+        await message.answer(f"🔍 По запросу '{query}' ничего не найдено.", reply_markup=keyboard.as_markup())
+        return
+    
+    await show_links_list(message, links, f"🔍 Результаты поиска: '{query}'")
 
 @router.message()
-async def handle_all_messages(message: Message):
+async def handle_all_messages(message: Message, state: FSMContext):
     """Обработчик всех сообщений для отладки (ставить в самый конец файла!)"""
     logger.info(f"Получено сообщение: {message.text}")
     logger.info(f"Тип сообщения: {type(message)}")
@@ -1265,7 +1689,255 @@ async def handle_all_messages(message: Message):
             await handle_shared_file_download(message, share_id)
             return
     
+    # Проверяем, является ли сообщение URL
+    if message.text and is_valid_url(message.text.strip()):
+        logger.info(f"Обнаружен URL в сообщении: {message.text}")
+        await handle_url_message(message, state)
+        return
+    
     # Если сообщение пустое или None, просто логируем
     if not message.text:
         logger.info("Получено пустое сообщение (не текстовое), не обрабатываем")
-        return 
+        return
+
+def is_valid_url(url: str) -> bool:
+    """Проверяет, является ли строка валидным URL"""
+    import re
+    # Простая проверка URL
+    url_pattern = re.compile(
+        r'^https?://'  # http:// или https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # домен
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP
+        r'(?::\d+)?'  # порт
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    return bool(url_pattern.match(url))
+
+async def handle_url_message(message: Message, state: FSMContext):
+    """Обработчик сообщений с URL"""
+    url = message.text.strip()
+    
+    # Проверяем, не находимся ли мы в состоянии ожидания ввода
+    current_state = await state.get_state()
+    if current_state:
+        logger.info(f"Пользователь в состоянии {current_state}, пропускаем обработку URL")
+        return
+    
+    # Извлекаем название из URL
+    title = extract_title_from_url(url)
+    
+    # Создаем клавиатуру для подтверждения
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Да, добавить", callback_data="confirm_add_url")
+    keyboard.button(text="❌ Нет, отменить", callback_data="cancel_add_url")
+    keyboard.adjust(2)
+    
+    # Сохраняем URL в состоянии
+    await state.update_data(
+        url=url,
+        title=title,
+        description=None,
+        category='general',
+        tags=None
+    )
+    
+    confirm_text = f"""
+🔗 **Обнаружена ссылка!**
+
+📝 Название: {title}
+🔗 URL: {url}
+
+Хотите добавить эту ссылку в вашу коллекцию?
+    """
+    
+    await message.answer(confirm_text, reply_markup=keyboard.as_markup())
+
+def extract_title_from_url(url: str) -> str:
+    """Извлекает название из URL"""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        
+        # Убираем www. если есть
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Убираем порт если есть
+        if ':' in domain:
+            domain = domain.split(':')[0]
+        
+        # Убираем .com, .ru и другие домены
+        domain = domain.split('.')[0]
+        
+        # Делаем первую букву заглавной
+        title = domain.capitalize()
+        
+        return title
+    except:
+        return "Ссылка"
+
+@router.callback_query(F.data == "confirm_add_url")
+async def callback_confirm_add_url(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение добавления URL"""
+    data = await state.get_data()
+    
+    # Проверяем, существует ли уже такая ссылка
+    existing_link = await db.check_link_exists(callback.from_user.id, data['url'])
+    
+    if existing_link:
+        # Ссылка уже существует
+        link_id, title, url, description, category, tags, created_date = existing_link
+        
+        await state.clear()
+        
+        # Показываем главное меню
+        welcome_text = """
+🤖 **Добро пожаловать в FileStorage Bot!**
+
+Этот бот поможет вам хранить и управлять вашими файлами и ссылками.
+
+📁 **Основные команды:**
+• /upload - Загрузить файл
+• /files - Показать ваши файлы
+• /search - Поиск файлов
+• /delete - Удаление файлов
+• /export - Экспорт файлов
+• /stats - Статистика
+• /help - Помощь
+
+💡 **Просто отправьте файл, и я сохраню его для вас!**
+🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
+🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
+📊 **Экспорт:** Создайте CSV со списком файлов
+🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
+        """
+        
+        main_keyboard = InlineKeyboardBuilder()
+        main_keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+        main_keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
+        main_keyboard.button(text="🔗 Ссылки", callback_data="show_links")
+        main_keyboard.button(text="🔍 Поиск", callback_data="search_files")
+        main_keyboard.button(text="📊 Статистика", callback_data="show_stats")
+        main_keyboard.button(text="📊 Экспорт", callback_data="export_files")
+        main_keyboard.adjust(2)
+        
+        duplicate_text = f"""
+⚠️ **Ссылка уже существует!**
+
+📝 Название: {title}
+🔗 URL: {url}
+📂 Категория: {get_link_category_name(category)}
+📅 Добавлена: {created_date[:10]}
+
+Эта ссылка уже была добавлена ранее.
+        """
+        
+        await callback.message.answer(duplicate_text, reply_markup=main_keyboard.as_markup())
+        await callback.answer("⚠️ Ссылка уже существует!")
+        return
+    
+    # Сохраняем ссылку в базу данных
+    result = await db.add_user_link(
+        user_id=callback.from_user.id,
+        title=data['title'],
+        url=data['url'],
+        description=data.get('description'),
+        category=data.get('category', 'general'),
+        tags=data.get('tags')
+    )
+    
+    await state.clear()
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
+    keyboard.button(text="➕ Добавить еще", callback_data="add_link")
+    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.adjust(1)
+    
+    if result:
+        success_text = f"""
+✅ **Ссылка успешно добавлена!**
+
+📝 Название: {data['title']}
+🔗 URL: {data['url']}
+📂 Категория: {get_link_category_name(data.get('category', 'general'))}
+📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}
+        """
+        await callback.message.answer(success_text, reply_markup=keyboard.as_markup())
+    else:
+        await callback.message.answer("❌ Ошибка при сохранении ссылки. Попробуйте еще раз.", reply_markup=keyboard.as_markup())
+    
+    # Показываем главное меню после добавления
+    welcome_text = """
+🤖 **Добро пожаловать в FileStorage Bot!**
+
+Этот бот поможет вам хранить и управлять вашими файлами и ссылками.
+
+📁 **Основные команды:**
+• /upload - Загрузить файл
+• /files - Показать ваши файлы
+• /search - Поиск файлов
+• /delete - Удаление файлов
+• /export - Экспорт файлов
+• /stats - Статистика
+• /help - Помощь
+
+💡 **Просто отправьте файл, и я сохраню его для вас!**
+🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
+🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
+📊 **Экспорт:** Создайте CSV со списком файлов
+🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
+    """
+    
+    main_keyboard = InlineKeyboardBuilder()
+    main_keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    main_keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
+    main_keyboard.button(text="🔗 Ссылки", callback_data="show_links")
+    main_keyboard.button(text="🔍 Поиск", callback_data="search_files")
+    main_keyboard.button(text="📊 Статистика", callback_data="show_stats")
+    main_keyboard.button(text="📊 Экспорт", callback_data="export_files")
+    main_keyboard.adjust(2)
+    
+    await callback.message.answer(welcome_text, reply_markup=main_keyboard.as_markup())
+    
+    await callback.answer()
+
+@router.callback_query(F.data == "cancel_add_url")
+async def callback_cancel_add_url(callback: CallbackQuery, state: FSMContext):
+    """Отмена добавления URL"""
+    await state.clear()
+    
+    # Показываем главное меню
+    welcome_text = """
+🤖 **Добро пожаловать в FileStorage Bot!**
+
+Этот бот поможет вам хранить и управлять вашими файлами и ссылками.
+
+📁 **Основные команды:**
+• /upload - Загрузить файл
+• /files - Показать ваши файлы
+• /search - Поиск файлов
+• /delete - Удаление файлов
+• /export - Экспорт файлов
+• /stats - Статистика
+• /help - Помощь
+
+💡 **Просто отправьте файл, и я сохраню его для вас!**
+🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
+🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
+📊 **Экспорт:** Создайте CSV со списком файлов
+🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
+    """
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📁 Мои файлы", callback_data="show_files")
+    keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
+    keyboard.button(text="🔗 Ссылки", callback_data="show_links")
+    keyboard.button(text="🔍 Поиск", callback_data="search_files")
+    keyboard.button(text="📊 Статистика", callback_data="show_stats")
+    keyboard.button(text="📊 Экспорт", callback_data="export_files")
+    keyboard.adjust(2)
+    
+    await callback.message.answer(welcome_text, reply_markup=keyboard.as_markup())
+    await callback.answer("❌ Добавление ссылки отменено") 

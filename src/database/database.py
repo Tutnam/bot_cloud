@@ -46,6 +46,21 @@ class Database:
                     FOREIGN KEY (record_id) REFERENCES files (id) ON DELETE CASCADE
                 )
             ''')
+            
+            # Создаем таблицу для пользовательских ссылок
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT DEFAULT 'general',
+                    tags TEXT,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )
+            ''')
             conn.commit()
     
     async def add_file(self, file_id: str, file_name: str, file_size: int, 
@@ -315,4 +330,152 @@ class Database:
                 return cursor.rowcount
         except Exception as e:
             logger.error(f"Ошибка при очистке истекших ссылок: {e}")
-            return 0 
+            return 0
+    
+    # Методы для работы с пользовательскими ссылками
+    async def check_link_exists(self, user_id: int, url: str):
+        """Проверить, существует ли ссылка у пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, title, url, description, category, tags, created_date
+                    FROM user_links 
+                    WHERE user_id = ? AND url = ? AND is_active = 1
+                ''', (user_id, url))
+                return cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Ошибка при проверке существования ссылки: {e}")
+            return None
+
+    async def add_user_link(self, user_id: int, title: str, url: str, description: str = None, 
+                           category: str = 'general', tags: str = None):
+        """Добавить пользовательскую ссылку"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO user_links (user_id, title, url, description, category, tags)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (user_id, title, url, description, category, tags))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении ссылки: {e}")
+            return None
+    
+    async def get_user_links(self, user_id: int):
+        """Получить все ссылки пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, title, url, description, category, tags, created_date
+                    FROM user_links 
+                    WHERE user_id = ? AND is_active = 1 
+                    ORDER BY created_date DESC
+                ''', (user_id,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при получении ссылок пользователя: {e}")
+            return []
+    
+    async def get_user_links_by_category(self, user_id: int, category: str):
+        """Получить ссылки пользователя по категории"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, title, url, description, category, tags, created_date
+                    FROM user_links 
+                    WHERE user_id = ? AND category = ? AND is_active = 1 
+                    ORDER BY created_date DESC
+                ''', (user_id, category))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при получении ссылок по категории: {e}")
+            return []
+    
+    async def get_user_link_categories(self, user_id: int):
+        """Получить категории ссылок пользователя с количеством"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT category, COUNT(*) as count
+                    FROM user_links 
+                    WHERE user_id = ? AND is_active = 1 
+                    GROUP BY category 
+                    ORDER BY count DESC
+                ''', (user_id,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при получении категорий ссылок: {e}")
+            return []
+    
+    async def get_user_link_by_id(self, link_id: int, user_id: int):
+        """Получить ссылку по ID"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, title, url, description, category, tags, created_date
+                    FROM user_links 
+                    WHERE id = ? AND user_id = ? AND is_active = 1
+                ''', (link_id, user_id))
+                return cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Ошибка при получении ссылки: {e}")
+            return None
+    
+    async def delete_user_link(self, link_id: int, user_id: int):
+        """Удалить ссылку пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE user_links SET is_active = 0 
+                    WHERE id = ? AND user_id = ?
+                ''', (link_id, user_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Ошибка при удалении ссылки: {e}")
+            return False
+    
+    async def search_user_links(self, user_id: int, query: str):
+        """Поиск ссылок пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, title, url, description, category, tags, created_date
+                    FROM user_links 
+                    WHERE user_id = ? AND is_active = 1 AND (
+                        title LIKE ? OR 
+                        description LIKE ? OR 
+                        tags LIKE ? OR 
+                        url LIKE ?
+                    )
+                    ORDER BY created_date DESC
+                ''', (user_id, f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка при поиске ссылок: {e}")
+            return []
+    
+    async def get_user_links_stats(self, user_id: int):
+        """Получить статистику ссылок пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM user_links WHERE user_id = ? AND is_active = 1
+                ''', (user_id,))
+                result = cursor.fetchone()
+                return {
+                    'total_links': result[0] or 0
+                }
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики ссылок: {e}")
+            return {'total_links': 0} 
