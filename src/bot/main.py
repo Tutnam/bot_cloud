@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 from src.config.config import Config
-from src.handlers.handlers import router
+from src.handlers.handlers import router, init_database
 
 # Настройка логирования
 logging.basicConfig(
@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 async def main():
     """Главная функция запуска бота"""
+    # Initialize database first
+    init_database()
+    
     # Инициализируем бота и диспетчер
     bot = Bot(token=Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     

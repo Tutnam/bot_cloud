@@ -19,7 +19,16 @@ from src.utils.utils import format_file_size, get_file_extension, get_file_categ
 
 logger = logging.getLogger(__name__)
 router = Router()
-db = Database()
+db = None  # Will be initialized later
+
+def init_database():
+    """Initialize the database instance"""
+    global db
+    import os
+    # Ensure logs directory exists
+    os.makedirs('logs', exist_ok=True)
+    db = Database()
+    logger.info("Database initialized successfully")
 
 class FileUploadStates(StatesGroup):
     waiting_for_description = State()
