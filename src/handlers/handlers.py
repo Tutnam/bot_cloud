@@ -74,24 +74,17 @@ async def cmd_start(message: Message):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
-• /export - Экспорт файлов
-• /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
-📊 **Экспорт:** Создайте CSV со списком файлов
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     keyboard.button(text="🔗 Ссылки", callback_data="show_links")
-    keyboard.button(text="🔍 Поиск", callback_data="search_files")
-    keyboard.button(text="📊 Статистика", callback_data="show_stats")
-    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.adjust(2)
     
     await message.answer(welcome_text, reply_markup=keyboard.as_markup())
@@ -112,8 +105,6 @@ async def cmd_help(message: Message):
 • /files - Показать все ваши файлы
 • /search <запрос> - Поиск файлов
 • /delete - Информация об удалении файлов
-• /export - Экспорт файлов в CSV
-• /stats - Статистика использования
 
 **Управление ссылками:**
 • Просто вставьте ссылку в чат - бот предложит её добавить
@@ -125,11 +116,6 @@ async def cmd_help(message: Message):
 • Используйте кнопку "🗑️ Удалить" рядом с файлом
 • Подтверждение удаления для безопасности
 • Удаленные файлы нельзя восстановить
-
-**Экспорт файлов:**
-• /export - Создать CSV файл со списком файлов
-• Включает название, размер, тип, дату загрузки
-• Описания и теги файлов
 
 **Ограничения:**
 • Максимальный размер файла: {max_size}MB
@@ -514,7 +500,7 @@ async def show_user_files_by_category(message: Message, user_id: int, category: 
 async def callback_search_files(callback: CallbackQuery, state: FSMContext):
     """Callback для поиска файлов"""
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
+    keyboard.button(text="🔙 Назад", callback_data="main_menu")
     keyboard.button(text="❌ Отменить поиск", callback_data="cancel_search")
     keyboard.adjust(2)
     
@@ -529,7 +515,6 @@ async def callback_cancel_search(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    keyboard.button(text="🔍 Поиск", callback_data="search_files")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(2)
     
@@ -570,24 +555,17 @@ async def callback_main_menu(callback: CallbackQuery):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
-• /export - Экспорт файлов
-• /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
-📊 **Экспорт:** Создайте CSV со списком файлов
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     keyboard.button(text="🔗 Ссылки", callback_data="show_links")
-    keyboard.button(text="🔍 Поиск", callback_data="search_files")
-    keyboard.button(text="📊 Статистика", callback_data="show_stats")
-    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.adjust(2)
     
     await callback.message.answer(welcome_text, reply_markup=keyboard.as_markup())
@@ -1100,7 +1078,7 @@ async def show_files_list(message: Message, files: list, title: str):
         files_text += f"... и еще {len(files) - 8} файлов"
     
     # Добавляем общие кнопки
-    keyboard.button(text="🔍 Поиск", callback_data="search_files")
+    keyboard.button(text="🔙 Назад к категориям", callback_data="show_files")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(2)  # По две кнопки в строке
     
@@ -1287,11 +1265,10 @@ async def show_link_categories(message: Message, user_id: int):
     
     if not categories:
         keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
         keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
         keyboard.adjust(1)
         
-        await message.answer("📝 У вас пока нет сохраненных ссылок.\n\n➕ Нажмите 'Добавить ссылку' чтобы создать первую ссылку!", reply_markup=keyboard.as_markup())
+        await message.answer("📝 У вас пока нет сохраненных ссылок.\n\n🔗 Чтобы добавить ссылку, просто отправьте ее в чат!", reply_markup=keyboard.as_markup())
         return
     
     text = "🔗 **Ваши ссылки по категориям:**\n\n"
@@ -1304,7 +1281,6 @@ async def show_link_categories(message: Message, user_id: int):
         icon = get_link_category_icon(category)
         keyboard.button(text=f"{icon} {category_name} ({count})", callback_data=f"link_category_{category}")
     
-    keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
     keyboard.button(text="🔍 Поиск ссылок", callback_data="search_links")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(1)
@@ -1336,12 +1312,11 @@ async def show_user_links_by_category(message: Message, user_id: int, category: 
     
     if not links:
         keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
         keyboard.button(text="🔙 Назад к категориям", callback_data="show_links")
         keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
         keyboard.adjust(1)
         
-        await message.answer("📝 В этой категории пока нет ссылок.", reply_markup=keyboard.as_markup())
+        await message.answer("📝 В этой категории пока нет ссылок.\n\n🔗 Чтобы добавить ссылку, просто отправьте ее в чат!", reply_markup=keyboard.as_markup())
         return
     
     await show_links_list(message, links, title)
@@ -1374,8 +1349,6 @@ async def show_links_list(message: Message, links: list, title: str):
         link_id = link[0]
         keyboard.button(text=f"🔗 {i}. {link[1][:20]}...", callback_data=f"view_link_{link_id}")
     
-    keyboard.button(text="➕ Добавить ссылку", callback_data="add_link")
-    keyboard.button(text="🔍 Поиск ссылок", callback_data="search_links")
     keyboard.button(text="🔙 Назад к категориям", callback_data="show_links")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(1)
@@ -1522,7 +1495,6 @@ async def save_link(callback, state: FSMContext):
         
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
-        keyboard.button(text="➕ Добавить еще", callback_data="add_link")
         keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
         keyboard.adjust(1)
         
@@ -1553,7 +1525,6 @@ async def save_link(callback, state: FSMContext):
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
-    keyboard.button(text="➕ Добавить еще", callback_data="add_link")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(1)
     
@@ -1670,7 +1641,6 @@ async def handle_link_search_query(message: Message, state: FSMContext):
     
     if not links:
         keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="🔍 Новый поиск", callback_data="search_links")
         keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
         keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
         keyboard.adjust(1)
@@ -1811,24 +1781,18 @@ async def callback_confirm_add_url(callback: CallbackQuery, state: FSMContext):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
-• /export - Экспорт файлов
-• /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
-📊 **Экспорт:** Создайте CSV со списком файлов
+
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
         """
         
         main_keyboard = InlineKeyboardBuilder()
         main_keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-        main_keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
         main_keyboard.button(text="🔗 Ссылки", callback_data="show_links")
-        main_keyboard.button(text="🔍 Поиск", callback_data="search_files")
-        main_keyboard.button(text="📊 Статистика", callback_data="show_stats")
-        main_keyboard.button(text="📊 Экспорт", callback_data="export_files")
         main_keyboard.adjust(2)
         
         duplicate_text = f"""
@@ -1860,7 +1824,6 @@ async def callback_confirm_add_url(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="🔗 Мои ссылки", callback_data="show_links")
-    keyboard.button(text="➕ Добавить еще", callback_data="add_link")
     keyboard.button(text="🏠 Главное меню", callback_data="main_menu")
     keyboard.adjust(1)
     
@@ -1888,24 +1851,18 @@ async def callback_confirm_add_url(callback: CallbackQuery, state: FSMContext):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
-• /export - Экспорт файлов
-• /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
-📊 **Экспорт:** Создайте CSV со списком файлов
+
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     main_keyboard = InlineKeyboardBuilder()
     main_keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    main_keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     main_keyboard.button(text="🔗 Ссылки", callback_data="show_links")
-    main_keyboard.button(text="🔍 Поиск", callback_data="search_files")
-    main_keyboard.button(text="📊 Статистика", callback_data="show_stats")
-    main_keyboard.button(text="📊 Экспорт", callback_data="export_files")
     main_keyboard.adjust(2)
     
     await callback.message.answer(welcome_text, reply_markup=main_keyboard.as_markup())
@@ -1928,24 +1885,18 @@ async def callback_cancel_add_url(callback: CallbackQuery, state: FSMContext):
 • /files - Показать ваши файлы
 • /search - Поиск файлов
 • /delete - Удаление файлов
-• /export - Экспорт файлов
-• /stats - Статистика
 • /help - Помощь
 
 💡 **Просто отправьте файл, и я сохраню его для вас!**
 🔗 **Ссылки:** Просто вставьте ссылку в чат, и я предложу её добавить
 🗑️ **Удаление:** Используйте кнопку "🗑️ Удалить" рядом с файлом
-📊 **Экспорт:** Создайте CSV со списком файлов
+
 🔗 **Поделиться:** Используйте кнопку "🔗 Поделиться" для создания ссылки
     """
     
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📁 Мои файлы", callback_data="show_files")
-    keyboard.button(text="📤 Загрузить файл", callback_data="upload_file")
     keyboard.button(text="🔗 Ссылки", callback_data="show_links")
-    keyboard.button(text="🔍 Поиск", callback_data="search_files")
-    keyboard.button(text="📊 Статистика", callback_data="show_stats")
-    keyboard.button(text="📊 Экспорт", callback_data="export_files")
     keyboard.adjust(2)
     
     await callback.message.answer(welcome_text, reply_markup=keyboard.as_markup())

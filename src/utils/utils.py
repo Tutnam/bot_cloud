@@ -48,6 +48,10 @@ def get_file_extension(file_obj: Union[Document, PhotoSize, Video, Audio, Voice]
         'text/plain': 'txt',
         'application/zip': 'zip',
         'application/x-rar-compressed': 'rar',
+        'application/vnd.android.package-archive': 'apk',
+        'application/x-aab': 'aab',
+        'application/x-xapk': 'xapk',
+        'application/octet-stream': 'obb',
         'image/jpeg': 'jpg',
         'image/png': 'png',
         'image/gif': 'gif',
@@ -140,6 +144,10 @@ def get_file_category(file_type: str) -> str:
     elif file_type in ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']:
         return "archives"
     
+    # Android приложения
+    elif file_type in ['apk', 'aab', 'xapk', 'apks', 'apkm', 'obb']:
+        return "apk"
+    
     # Другое
     else:
         return "other"
@@ -152,7 +160,8 @@ def get_category_icon(category: str) -> str:
         'videos': '🎬',
         'audio': '🎵',
         'archives': '📦',
-        'other': '📱'
+        'apk': '📱',
+        'other': '📁'
     }
     return icons.get(category, '📱')
 
@@ -164,6 +173,7 @@ def get_category_name(category: str) -> str:
         'videos': 'Видео',
         'audio': 'Аудио',
         'archives': 'Архивы',
+        'apk': 'Android приложения',
         'other': 'Другое'
     }
     return names.get(category, 'Другое')
@@ -183,6 +193,12 @@ def get_file_type_icon(file_type: str) -> str:
         'mp4': '🎬',
         'zip': '📦',
         'rar': '📦',
+        'apk': '📱',
+        'aab': '📱',
+        'xapk': '📱',
+        'apks': '📱',
+        'apkm': '📱',
+        'obb': '📱',
         'bin': '📄'
     }
     return icons.get(file_type.lower(), '📄')
