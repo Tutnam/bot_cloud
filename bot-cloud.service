@@ -1,0 +1,17 @@
+[Unit]
+Description=FileStorage Telegram Bot
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/boss/cursor_project/bot_cloud
+Environment="PATH=/home/boss/cursor_project/bot_cloud/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/boss/cursor_project/bot_cloud/start_bot_screen.sh
+ExecStop=/home/boss/cursor_project/bot_cloud/stop_bot_screen.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+
