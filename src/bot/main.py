@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.enums import ParseMode
@@ -7,6 +8,9 @@ from aiogram.client.default import DefaultBotProperties
 
 from src.config.config import Config
 from src.handlers.handlers import router, init_database
+
+# Создаем директорию для логов, если её нет
+os.makedirs('logs', exist_ok=True)
 
 # Настройка логирования
 logging.basicConfig(
