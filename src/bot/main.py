@@ -9,8 +9,9 @@ from aiogram.client.default import DefaultBotProperties
 from src.config.config import Config
 from src.handlers.handlers import router, init_database
 
-# Создаем директорию для логов, если её нет
+# Создаем директории для логов и данных, если их нет
 os.makedirs('logs', exist_ok=True)
+os.makedirs('data', exist_ok=True)
 
 # Настройка логирования
 logging.basicConfig(

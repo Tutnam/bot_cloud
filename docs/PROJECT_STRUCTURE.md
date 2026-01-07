@@ -35,9 +35,10 @@ bot_cloud/
 ├── tests/                       # Тесты
 │   ├── __init__.py
 │   └── test_database.py        # Тесты БД
-├── logs/                        # Логи и данные
-│   ├── bot.log                 # Логи бота
+├── data/                        # Данные приложения
 │   └── files.db                # База данных
+├── logs/                        # Логи
+│   └── bot.log                 # Логи бота
 ├── main.py                      # Точка входа
 ├── setup.py                     # Установка пакета
 ├── pyproject.toml              # Современная конфигурация

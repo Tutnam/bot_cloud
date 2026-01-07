@@ -25,8 +25,9 @@ def init_database():
     """Initialize the database instance"""
     global db
     import os
-    # Ensure logs directory exists
+    # Ensure logs and data directories exist
     os.makedirs('logs', exist_ok=True)
+    os.makedirs('data', exist_ok=True)
     db = Database()
     logger.info("Database initialized successfully")
 

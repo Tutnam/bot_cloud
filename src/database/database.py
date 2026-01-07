@@ -7,9 +7,30 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_path: str = "logs/files.db"):
+    def __init__(self, db_path: str = "data/files.db"):
         self.db_path = db_path
+        self._ensure_database_directory()
+        self._migrate_old_database()
         self.init_database()
+
+    def _ensure_database_directory(self):
+        """Убедиться, что директория для БД существует"""
+        db_dir = Path(self.db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+
+    def _migrate_old_database(self):
+        """Перенести базу данных из устаревшей папки logs при наличии"""
+        old_path = Path("logs/files.db")
+        new_path = Path(self.db_path)
+
+        if new_path.exists() or not old_path.exists():
+            return
+
+        try:
+            old_path.rename(new_path)
+            logger.info(f"Перенесена база данных в {new_path}")
+        except Exception as e:
+            logger.error(f"Не удалось перенести базу данных из logs: {e}")
     
     def init_database(self):
         """Инициализация базы данных"""
